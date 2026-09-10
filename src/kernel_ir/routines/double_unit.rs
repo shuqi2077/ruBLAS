@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
 use ruda_kernel::dsl::Runtime;
@@ -103,7 +103,7 @@ impl<RC: RuntimeConfig> Routine<RC> for DoubleUnitAlgorithm {
             &device_settings.vector_sizes,
         )?;
 
-        let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+        let rudadim_resource = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
@@ -113,7 +113,7 @@ impl<RC: RuntimeConfig> Routine<RC> for DoubleUnitAlgorithm {
             blueprint,
             dtypes,
             problem,
-            cubedim_resource,
+            rudadim_resource,
             device_settings,
         )
     }
@@ -131,7 +131,7 @@ impl<RC: RuntimeConfig> Routine<RC> for DoubleUnitAlgorithm {
             client: client.clone(),
             plane_dim,
             vector_sizes,
-            max_cube_count: client.properties().hardware.max_cube_count,
+            max_ruda_count: client.properties().hardware.max_ruda_count,
         }
     }
 }

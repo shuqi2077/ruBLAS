@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::global::GlobalReaderConfig,
     components::global::PlaneFlowPartition,
@@ -15,7 +15,7 @@ use crate::kernel_ir::{
 };
 use ruda_kernel::dsl::prelude::*;
 
-#[cube]
+#[ruda]
 /// Read the first stage for both Lhs and Rhs
 ///
 /// If there is specialization, will add a runtime if to determine the role of the plane
@@ -58,7 +58,7 @@ pub fn read_first<S: SyncStrategy, LJ: JobExecutor<S>, RJ: JobExecutor<S>>(
     };
 }
 
-#[cube]
+#[ruda]
 /// Execute on the current stage while loading the next stage
 ///
 /// If there is specialization, will add a runtime if to determine the role of the plane
@@ -149,7 +149,7 @@ pub fn execute_current_and_read_next<
     };
 }
 
-#[cube]
+#[ruda]
 /// Execute on the last stage, then write results
 ///
 /// If there is specialization, will add a runtime if to determine the role of the plane

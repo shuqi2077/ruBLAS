@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::{
@@ -9,10 +9,10 @@ use crate::kernel_ir::{
     definition::MatmulTypes,
 };
 
-/// Simple synchronous barrier, using `cube_sync()`
+/// Simple synchronous barrier, using `ruda_sync()`
 pub struct Synchronous {}
 
-#[cube]
+#[ruda]
 impl SyncStrategy for Synchronous {
     type Barrier = ();
 
@@ -22,6 +22,6 @@ impl SyncStrategy for Synchronous {
         _barrier: &mut Self::Barrier,
         #[comptime] _config: SharedGlobalMatmulConfig<S>,
     ) {
-        sync_cube();
+        sync_ruda();
     }
 }

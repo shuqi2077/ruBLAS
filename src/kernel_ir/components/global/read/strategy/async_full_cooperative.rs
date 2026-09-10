@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::{
         global::{
@@ -22,7 +22,7 @@ use ruda_kernel::tiling::{InvalidConfigError, MatrixLayout, tile::Strided};
 
 use super::LoadingValidation;
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads global memory into the stage without layout change,  
 /// dividing the stage into the smallest possible contiguous slices.  
 ///
@@ -64,7 +64,7 @@ impl LoadMaxRoundPlaneCount for AsyncFullCooperativeLoading {
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullCooperativeLoading {
     type TilingLayout = StridedTilingLayout;
     type SyncStrategy = AsyncBarrier;
@@ -89,13 +89,13 @@ impl<RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullCooperativeLoading 
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncFullCooperativeJob {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_slices: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     LoadingJob<EG, NG, ES, NS, StridedTilingLayout, AsyncBarrier> for AsyncFullCooperativeJob
 {

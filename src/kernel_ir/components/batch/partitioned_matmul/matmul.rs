@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use std::marker::PhantomData;
 
@@ -6,8 +6,8 @@ use crate::kernel_ir::components::batch::partitioned_matmul::partition::{
     GlobalPartitionMatmul, PartitionRangeDim, PartitionRanges,
 };
 use crate::kernel_ir::definition::{
-    AccG, Blueprint as _, CubeMapping, LhsG, MatmulElems, MatmulTypes, MatmulVectorSizes, RhsG,
-    TilingBlueprint, cube_pos_to_m_n_batch,
+    AccG, Blueprint as _, RudaMapping, LhsG, MatmulElems, MatmulTypes, MatmulVectorSizes, RhsG,
+    TilingBlueprint, ruda_pos_to_m_n_batch,
 };
 use crate::kernel_ir::launch::MatmulArgs;
 use crate::kernel_ir::{
@@ -19,7 +19,7 @@ use crate::kernel_ir::{
     components::stage::StageConfig as _,
 };
 
-#[cube(launch_unchecked, explicit_define, address_type = "dynamic")]
+#[ruda(launch_unchecked, explicit_define, address_type = "dynamic")]
 #[allow(clippy::type_complexity)]
 /// Launches the matmul kernel
 pub(crate) fn matmul_entry<
@@ -40,7 +40,7 @@ pub(crate) fn matmul_entry<
     >,
     output: &mut <Args as MatmulArgs>::Output<Vector<Acc, AccSize>>,
     config: <Args as MatmulArgs>::Config,
-    cube_mapping: CubeMapping,
+    ruda_mapping: RudaMapping,
     #[comptime] blueprint: TilingBlueprint,
     #[comptime] dtypes: MatmulElems,
     #[comptime] _source: String,
@@ -84,8 +84,8 @@ pub(crate) fn matmul_entry<
     let config = comptime!(config.unwrap());
 
     #[allow(clippy::collapsible_if)]
-    if cube_mapping.can_yield_extra_cubes {
-        if CUBE_POS >= cube_mapping.num_valid_cubes() {
+    if ruda_mapping.can_yield_extra_rudas {
+        if RUDA_POS >= ruda_mapping.num_valid_rudas() {
             terminate!()
         }
     }
@@ -161,13 +161,13 @@ pub(crate) fn matmul_entry<
             ),
         )>,
         GPM,
-    >::execute::<Args>(&mut state, cube_mapping, config);
+    >::execute::<Args>(&mut state, ruda_mapping, config);
 }
 
 /// Executes matrix multiplication at the batch level,
-/// assigning each cube to handle multiple global matmuls.
+/// assigning each ruda to handle multiple global matmuls.
 ///
-/// Each cube performs a number of global matmuls specified by
+/// Each ruda performs a number of global matmuls specified by
 /// the global partition size of the tiling scheme
 pub struct PartitionedBatchMatmul<
     RC: RuntimeConfig,
@@ -181,7 +181,7 @@ pub struct PartitionedBatchMatmul<
     _s: PhantomData<S>,
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig, MP: MatmulTypes, GMM: GlobalMatmul<RC, MP>, GPMM: GlobalPartitionMatmul>
     BatchMatmul<RC, MP> for PartitionedBatchMatmul<RC, MP, GMM, GPMM>
 {
@@ -189,13 +189,13 @@ impl<RC: RuntimeConfig, MP: MatmulTypes, GMM: GlobalMatmul<RC, MP>, GPMM: Global
 
     fn execute<Args: MatmulArgs<Config = RC>>(
         state: &mut Args::State<LhsG<MP>, RhsG<MP>, AccG<MP>>,
-        cube_mapping: CubeMapping,
+        ruda_mapping: RudaMapping,
         #[comptime] config: Self::Config,
     ) {
         let (_, _, problem_k) = Args::view_lhs(state).shape();
         let k_range = (0, problem_k);
 
-        let (m_index, n_index, batch_index) = cube_pos_to_m_n_batch(&cube_mapping);
+        let (m_index, n_index, batch_index) = ruda_pos_to_m_n_batch(&ruda_mapping);
 
         let ranges = PartitionRanges::new(
             PartitionRangeDim::new(

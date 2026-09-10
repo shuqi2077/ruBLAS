@@ -5,9 +5,9 @@
 //! load path slip through undetected. This test launches the kernel with a real
 //! bias tensor and validates `out = lhs @ rhs + bias`.
 
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_test_runtime::TestRuntime;
-use ruda_kernel::dsl::frontend::CubePrimitive;
+use ruda_kernel::dsl::frontend::RudaPrimitive;
 use ruda_kernel::dsl::ir::AddressType;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::TensorHandle;
@@ -19,7 +19,7 @@ use rublas::kernel_ir::{
         global::memory::{BatchLayout, BatchLayoutLaunch, GlobalLayout, GlobalLayoutLaunch},
     },
     definition::{
-        AvailableVectorSizes, Blueprint as _, MatmulElems, MatmulProblem, cube_mapping_launch,
+        AvailableVectorSizes, Blueprint as _, MatmulElems, MatmulProblem, ruda_mapping_launch,
     },
     launch::{TensorArgs, TensorInputsLaunch, TensorOutputLaunch},
     routines::{BlueprintStrategy, Routine, simple_unit::SimpleUnitAlgorithm},
@@ -236,13 +236,13 @@ fn launch_with_bias<A: Routine<()>>(
     unsafe {
         A::BatchMatmul::launch_unchecked::<TensorArgs, TestRuntime>(
             client,
-            launch_info.cube_dim,
-            launch_info.cube_count_plan.resolve(),
+            launch_info.ruda_dim,
+            launch_info.ruda_count_plan.resolve(),
             AddressType::U32,
             inputs,
             output,
             (),
-            cube_mapping_launch(&launch_info.cube_count_plan),
+            ruda_mapping_launch(&launch_info.ruda_count_plan),
             blueprint,
             &dtypes,
             &vector_sizes,

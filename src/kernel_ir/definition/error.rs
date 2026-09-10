@@ -1,6 +1,6 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::CubeCount;
-use ruda_kernel::dsl::CubeDim;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::RudaCount;
+use ruda_kernel::dsl::RudaDim;
 use ruda_kernel::dsl::VectorizationError;
 use ruda_kernel::dsl::ir::StorageType;
 use ruda_kernel::dsl::server::LaunchError;
@@ -30,11 +30,11 @@ impl From<LaunchError> for MatmulSetupError {
 
 /// A specific feature required for matmul is not available in the current runtime or hardware.
 pub enum MatmulAvailabilityError {
-    /// The requested cube count exceeds what the runtime or hardware supports.
-    CubeCountTooBig(CubeCount),
+    /// The requested ruda count exceeds what the runtime or hardware supports.
+    RudaCountTooBig(RudaCount),
 
-    /// The requested cube dimensions are too large for the current runtime or hardware.
-    CubeDimTooBig(CubeDim),
+    /// The requested ruda dimensions are too large for the current runtime or hardware.
+    RudaDimTooBig(RudaDim),
 
     /// The requested plane dimension is not supported.
     PlaneDimUnsupported { plane_dim: u32 },
@@ -131,11 +131,11 @@ impl Debug for MatmulSetupError {
 impl Debug for MatmulAvailabilityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MatmulAvailabilityError::CubeCountTooBig(count) => {
-                writeln!(f, "Cube count too big {count:?}")
+            MatmulAvailabilityError::RudaCountTooBig(count) => {
+                writeln!(f, "Ruda count too big {count:?}")
             }
-            MatmulAvailabilityError::CubeDimTooBig(dim) => {
-                writeln!(f, "Cube dim too big {dim:?}")
+            MatmulAvailabilityError::RudaDimTooBig(dim) => {
+                writeln!(f, "Ruda dim too big {dim:?}")
             }
             MatmulAvailabilityError::PlaneDimUnsupported { plane_dim } => {
                 writeln!(

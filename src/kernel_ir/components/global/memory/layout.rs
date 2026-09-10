@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::FastDivmod;
 use ruda_kernel::library::tensor::layout::Coords1d;
@@ -17,14 +17,14 @@ use crate::kernel_ir::{
 };
 
 /// Global layout that uses the last two dimensions and ignores all others.
-#[derive(CubeType, CubeLaunch, Clone, Copy)]
+#[derive(RudaType, RudaLaunch, Clone, Copy)]
 pub struct SimpleTmaGlobalLayout {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     transposed: bool,
     shape: BatchedCoords,
 }
 
-#[cube]
+#[ruda]
 impl SimpleTmaGlobalLayout {
     /// Creates a new 2D layout with the batch set to `nth_batch`.
     pub fn new(shape: BatchedCoords, #[comptime] layout: MatrixLayout) -> Self {
@@ -33,7 +33,7 @@ impl SimpleTmaGlobalLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for SimpleTmaGlobalLayout {
     type Coordinates = BatchedCoords;
     type SourceCoordinates = BatchedCoords;
@@ -79,7 +79,7 @@ impl From<GlobalMemoryConfig> for GlobalLayoutConfig {
 }
 
 /// Global layout that uses the last two dimensions and ignores all others.
-#[derive(CubeType, CubeLaunch, Clone)]
+#[derive(RudaType, RudaLaunch, Clone)]
 pub struct GlobalLayout {
     batch_layout: VirtualLayout<Coords1d, Coords1d>,
     rows: u32,
@@ -88,15 +88,15 @@ pub struct GlobalLayout {
     stride_row: usize,
     stride_col: usize,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     vector_size: VectorSize,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     packing: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     config: GlobalLayoutConfig,
 }
 
-#[cube]
+#[ruda]
 impl GlobalLayout {
     /// Create a new batched global layout. `batch_shape` should be based on the output shape.
     #[allow(clippy::too_many_arguments)]
@@ -123,7 +123,7 @@ impl GlobalLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for GlobalLayout {
     type Coordinates = BatchedCoords;
     type SourceCoordinates = Coords1d;
@@ -265,13 +265,13 @@ impl<R: Runtime> GlobalLayoutLaunch<R> {
     }
 }
 
-#[derive(CubeType, CubeLaunch)]
+#[derive(RudaType, RudaLaunch)]
 pub struct BatchLayout {
     batch_shape: Sequence<FastDivmod<u32>>,
     batch_strides: Sequence<usize>,
 }
 
-#[cube]
+#[ruda]
 impl BatchLayout {
     pub fn new(batch_strides: Sequence<usize>, batch_shape: Sequence<FastDivmod<u32>>) -> Self {
         BatchLayout {
@@ -281,7 +281,7 @@ impl BatchLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for BatchLayout {
     type Coordinates = Coords1d;
     type SourceCoordinates = Coords1d;
@@ -317,10 +317,10 @@ impl Layout for BatchLayout {
 }
 
 /// Layout that passed through the coordinates with no checks or modification.
-#[derive(CubeType, CubeLaunch)]
+#[derive(RudaType, RudaLaunch)]
 pub struct NoopLayout {}
 
-#[cube]
+#[ruda]
 impl NoopLayout {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -328,7 +328,7 @@ impl NoopLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for NoopLayout {
     type Coordinates = Coords1d;
     type SourceCoordinates = Coords1d;
@@ -368,22 +368,22 @@ impl<R: Runtime> BatchLayoutLaunch<R> {
     }
 }
 
-#[derive(CubeType, CubeLaunch)]
+#[derive(RudaType, RudaLaunch)]
 pub enum GlobalScaleLayout {
     PerTensor { shape: Coords2d },
     BlockScaled(BlockScaledLayout),
 }
 
 /// Workaround for enums not supporting `comptime`, should fix that in the future
-#[derive(CubeType, CubeLaunch)]
+#[derive(RudaType, RudaLaunch)]
 pub struct BlockScaledLayout {
     shape: Coords2d,
     scales_layout: GlobalLayout,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     block_size: Coords2d,
 }
 
-#[cube]
+#[ruda]
 impl BlockScaledLayout {
     pub fn new(
         shape: Coords2d,
@@ -398,7 +398,7 @@ impl BlockScaledLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for GlobalScaleLayout {
     type Coordinates = BatchedCoords;
     type SourceCoordinates = Coords1d;
@@ -456,19 +456,19 @@ impl Layout for GlobalScaleLayout {
     }
 }
 
-#[derive(CubeType, CubeLaunch)]
+#[derive(RudaType, RudaLaunch)]
 pub struct Transpose<Inner: Layout + LaunchArg> {
     inner: Inner,
 }
 
-#[cube]
+#[ruda]
 impl<Inner: Layout + LaunchArg> Transpose<Inner> {
     pub fn new(inner: Inner) -> Self {
         Transpose::<Inner> { inner }
     }
 }
 
-#[cube]
+#[ruda]
 impl<Inner: Layout<Coordinates = BatchedCoords> + LaunchArg> Layout for Transpose<Inner> {
     type Coordinates = BatchedCoords;
     type SourceCoordinates = Inner::SourceCoordinates;

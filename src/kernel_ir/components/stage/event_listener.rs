@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,17 +17,17 @@ pub enum StageEvent {
     Finish,
 }
 
-#[cube]
+#[ruda]
 /// Function that is called at each [StageEvent]
-pub trait StageEventListener: CubeType {
+pub trait StageEventListener: RudaType {
     fn on_event(this: &mut Self, #[comptime] event: StageEvent);
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Use when there is no event listening to do
 pub struct NoEvent {}
 
-#[cube]
+#[ruda]
 impl StageEventListener for NoEvent {
     fn on_event(_this: &mut Self, #[comptime] _event: StageEvent) {
         // Nothing to do
@@ -40,7 +40,7 @@ impl Default for NoEvent {
     }
 }
 
-#[cube]
+#[ruda]
 impl NoEvent {
     pub fn new() -> NoEvent {
         NoEvent {}

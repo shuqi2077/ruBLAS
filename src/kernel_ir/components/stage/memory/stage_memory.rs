@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::tiling::{
     stage::StageMemoryConfig,
@@ -22,7 +22,7 @@ impl StageFamily for StridedStageFamily {
     type Stage<ES: Numeric, NS: Size, T: TilingLayout> = StridedStageMemory<ES, NS, T>;
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Wrapper over the shared memory used for staging,
 /// abstracting its layout
 pub struct StridedStageMemory<ES: Numeric, NS: Size, T: TilingLayout> {
@@ -32,16 +32,16 @@ pub struct StridedStageMemory<ES: Numeric, NS: Size, T: TilingLayout> {
     pub swizzle: Swizzle,
     buffer_index: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_size: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     config: StageMemoryConfig,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _phantom: PhantomData<T>,
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, NS: Size, T: TilingLayout> StridedStageMemory<ES, NS, T> {
     /// Instantiate a new stage memory for the given identifier
     pub fn new(#[comptime] config: StageMemoryConfig) -> StridedStageMemory<ES, NS, T> {
@@ -204,7 +204,7 @@ impl<ES: Numeric, NS: Size, T: TilingLayout> StridedStageMemory<ES, NS, T> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, NS: Size, T: TilingLayout> Stage<ES, ReadOnly> for StridedStageMemory<ES, NS, T> {
     fn tile<Sc: TileScope>(this: &Self, tile: Coords2d) -> Tile<ES, Sc, ReadOnly> {
         let strided_tile = this.get_tile(tile);
@@ -212,7 +212,7 @@ impl<ES: Numeric, NS: Size, T: TilingLayout> Stage<ES, ReadOnly> for StridedStag
     }
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, NS: Size, T: TilingLayout> Stage<ES, ReadWrite>
     for StridedStageMemory<ES, NS, T>
 {
@@ -222,7 +222,7 @@ impl<ES: Numeric, NS: Size, T: TilingLayout> Stage<ES, ReadWrite>
     }
 }
 
-#[cube]
+#[ruda]
 impl LoadStageFamily<ReadOnly> for StridedStageFamily {
     fn create<ES: Numeric, NS: Size, T: TilingLayout>(
         #[comptime] alignment: usize,

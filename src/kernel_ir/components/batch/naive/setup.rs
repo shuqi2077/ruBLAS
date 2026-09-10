@@ -1,6 +1,6 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::CubeCount;
-use ruda_kernel::dsl::CubeDim;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::RudaCount;
+use ruda_kernel::dsl::RudaDim;
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::dsl::ir::AddressType;
@@ -12,7 +12,7 @@ use ruda_kernel::tiling::MatrixLayout;
 
 use crate::kernel_ir::{
     components::{
-        CubeDimResource,
+        RudaDimResource,
         batch::{
             BatchMatmulFamily,
             naive::{NaiveMatmul, NaiveMatmulConfig, matmul_entry},
@@ -21,7 +21,7 @@ use crate::kernel_ir::{
         stage::NumStages,
     },
     definition::{
-        Blueprint, CubeMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulTypes,
+        Blueprint, RudaMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulTypes,
         MatmulVectorSizes, SwizzleModes, TilingScheme,
     },
     launch::*,
@@ -94,13 +94,13 @@ impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
 
     unsafe fn launch_unchecked<'a, MA: MatmulArgs<Config = ()>, R: Runtime>(
         client: &ComputeClient<R>,
-        cube_dim: CubeDim,
-        cube_count: CubeCount,
+        ruda_dim: RudaDim,
+        ruda_count: RudaCount,
         address_type: AddressType,
         input: InputRuntimeArg<MA, R>,
         output: OutputRuntimeArg<MA, R>,
         _config: ConfigRuntimeArg<MA, R>,
-        cube_mapping: CubeMappingLaunch<R>,
+        ruda_mapping: RudaMappingLaunch<R>,
         blueprint: NaiveBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
@@ -108,13 +108,13 @@ impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
         unsafe {
             matmul_entry::launch_unchecked::<MA, Lhs, LhsSize, Rhs, RhsSize, Acc, AccSize, R>(
                 client,
-                cube_count,
-                cube_dim,
+                ruda_count,
+                ruda_dim,
                 address_type,
                 input,
                 output,
                 (),
-                cube_mapping,
+                ruda_mapping,
                 blueprint,
                 include_str!("matmul.rs").to_owned(),
                 [dtypes.lhs_global, dtypes.rhs_global, dtypes.acc_global],
@@ -125,13 +125,13 @@ impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
         Ok(())
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         _blueprint: &Self::Blueprint,
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError> {
+    ) -> Result<RudaDimResource, MatmulSetupError> {
         // Could be moved to blueprint to be less hard coded
-        Ok(CubeDimResource::Planes(8))
+        Ok(RudaDimResource::Planes(8))
     }
 
     fn validate_blueprint<R: Runtime>(

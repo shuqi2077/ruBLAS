@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use ruda_kernel::library::tensor::View;
@@ -80,27 +80,27 @@ pub trait ConcreteOutputFactory<A: Routine<()>>: LaunchArg {
     ) -> Self::RuntimeArg<R>;
 }
 
-pub trait RuntimeConfig: LaunchArg + CubeType + Clone + Send + Sync {}
-impl<T: LaunchArg + CubeType + Clone + Send + Sync> RuntimeConfig for T {}
+pub trait RuntimeConfig: LaunchArg + RudaType + Clone + Send + Sync {}
+impl<T: LaunchArg + RudaType + Clone + Send + Sync> RuntimeConfig for T {}
 
-#[cube]
+#[ruda]
 /// Arguments for the matrix multiplication algorithm.
 pub trait MatmulArgs: Send + Sync + 'static + Clone {
     /// Type used for the input.
-    type Input<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>: LaunchArg + CubeType;
+    type Input<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>: LaunchArg + RudaType;
 
     /// Type used for the output.
-    type Output<EO: CubePrimitive>: LaunchArg + CubeType;
+    type Output<EO: RudaPrimitive>: LaunchArg + RudaType;
 
     /// Type used for runtime configuration.
     type Config: RuntimeConfig;
 
     /// Inner state that is used to create tensor inputs and
     /// tensor outputs.
-    type State<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>: CubeType;
+    type State<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>: RudaType;
 
     /// Init the state.
-    fn init_state<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn init_state<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         input: &Self::Input<Lhs, Rhs, EO>,
         output: &mut Self::Output<EO>,
         config: Self::Config,
@@ -109,52 +109,52 @@ pub trait MatmulArgs: Send + Sync + 'static + Clone {
         #[comptime] out_layout_config: GlobalLayoutConfig,
     ) -> Self::State<Lhs, Rhs, EO>;
 
-    fn view_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Lhs, BatchedCoords> {
         unexpanded!()
     }
-    fn batch_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         _batch: usize,
     ) -> usize {
         unexpanded!()
     }
-    fn view_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Rhs, BatchedCoords> {
         unexpanded!()
     }
-    fn batch_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         _batch: usize,
     ) -> usize {
         unexpanded!()
     }
-    fn view_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
     ) -> ComptimeOption<View<EO, BatchedCoords>> {
         unexpanded!()
     }
-    fn batch_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         _batch: usize,
     ) -> usize {
         unexpanded!()
     }
-    fn view_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &mut Self::State<Lhs, Rhs, EO>,
     ) -> View<EO, BatchedCoords, ReadWrite> {
         unexpanded!()
     }
-    fn batch_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         _batch: usize,
     ) -> usize {
         unexpanded!()
     }
 
-    fn runtime_config<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn runtime_config<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
     ) -> Self::Config {
         unexpanded!()
@@ -176,9 +176,9 @@ pub struct TensorArgs<Config: RuntimeConfig = ()> {
     _config: PhantomData<Config>,
 }
 
-#[derive(CubeLaunch, CubeType, Clone, Copy)]
+#[derive(RudaLaunch, RudaType, Clone, Copy)]
 /// Input representation for [TensorArgs] implementing [MatmulArgs].
-pub struct TensorInputs<Lhs: CubePrimitive, Rhs: CubePrimitive, Acc: CubePrimitive> {
+pub struct TensorInputs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, Acc: RudaPrimitive> {
     /// The lhs tensor.
     lhs_batch: VirtualLayout<Coords1d, Coords1d>,
     lhs: View<Lhs, BatchedCoords>,
@@ -190,7 +190,7 @@ pub struct TensorInputs<Lhs: CubePrimitive, Rhs: CubePrimitive, Acc: CubePrimiti
     acc: ComptimeOption<View<Acc, BatchedCoords>>,
 }
 
-impl<Lhs: CubePrimitive, Rhs: CubePrimitive, Acc: CubePrimitive, A: Routine<()>>
+impl<Lhs: RudaPrimitive, Rhs: RudaPrimitive, Acc: RudaPrimitive, A: Routine<()>>
     ConcreteInputsFactory<A> for TensorInputs<Lhs, Rhs, Acc>
 {
     fn create<R: Runtime>(
@@ -252,13 +252,13 @@ impl<Lhs: CubePrimitive, Rhs: CubePrimitive, Acc: CubePrimitive, A: Routine<()>>
     }
 }
 
-#[derive(CubeType, CubeLaunch, Clone, Copy)]
-pub struct TensorOutput<EG: CubePrimitive> {
+#[derive(RudaType, RudaLaunch, Clone, Copy)]
+pub struct TensorOutput<EG: RudaPrimitive> {
     view: View<EG, BatchedCoords, ReadWrite>,
     batch: VirtualLayout<Coords1d, Coords1d>,
 }
 
-impl<EG: CubePrimitive, A: Routine<()>> ConcreteOutputFactory<A> for TensorOutput<EG> {
+impl<EG: RudaPrimitive, A: Routine<()>> ConcreteOutputFactory<A> for TensorOutput<EG> {
     fn create<R: Runtime>(
         out: TensorBinding<R>,
         blueprint: &A::Blueprint,
@@ -277,16 +277,16 @@ impl<EG: CubePrimitive, A: Routine<()>> ConcreteOutputFactory<A> for TensorOutpu
     }
 }
 
-#[cube]
+#[ruda]
 impl<Config: RuntimeConfig> MatmulArgs for TensorArgs<Config> {
-    type Output<EO: CubePrimitive> = TensorOutput<EO>;
-    type Input<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive> =
+    type Output<EO: RudaPrimitive> = TensorOutput<EO>;
+    type Input<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive> =
         TensorInputs<Lhs, Rhs, EO>;
     type Config = Config;
-    type State<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive> =
+    type State<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive> =
         (TensorInputs<Lhs, Rhs, EO>, TensorOutput<EO>, Config);
 
-    fn init_state<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn init_state<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         input: &Self::Input<Lhs, Rhs, EO>,
         output: &mut Self::Output<EO>,
         config: Self::Config,
@@ -297,39 +297,39 @@ impl<Config: RuntimeConfig> MatmulArgs for TensorArgs<Config> {
         (*input, *output, config)
     }
 
-    fn view_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Lhs, BatchedCoords> {
         state.0.lhs
     }
 
-    fn batch_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         state.0.lhs_batch.to_source_pos(batch)
     }
 
-    fn view_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Rhs, BatchedCoords> {
         state.0.rhs
     }
 
-    fn batch_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         state.0.rhs_batch.to_source_pos(batch)
     }
 
-    fn view_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> ComptimeOption<View<EO, BatchedCoords>> {
         state.0.acc
     }
 
-    fn batch_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
@@ -341,20 +341,20 @@ impl<Config: RuntimeConfig> MatmulArgs for TensorArgs<Config> {
         }
     }
 
-    fn view_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &mut Self::State<Lhs, Rhs, EO>,
     ) -> View<EO, BatchedCoords, ReadWrite> {
         state.1.view
     }
 
-    fn batch_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         state.1.batch.to_source_pos(batch)
     }
 
-    fn runtime_config<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn runtime_config<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> Self::Config {
         state.2.clone()
@@ -369,9 +369,9 @@ pub struct TensorMapArgs<Config: RuntimeConfig = ()> {
     _config: PhantomData<Config>,
 }
 
-#[derive(CubeLaunch, CubeType, Clone, Copy)]
+#[derive(RudaLaunch, RudaType, Clone, Copy)]
 /// Input representation for [TensorArgs] implementing [MatmulArgs].
-pub struct TensorMapInputs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive> {
+pub struct TensorMapInputs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive> {
     /// The lhs tensor.
     pub lhs: View<Lhs, BatchedCoords>,
     /// The rhs tensor.
@@ -382,7 +382,7 @@ pub struct TensorMapInputs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimi
     pub acc_batch: ComptimeOption<VirtualLayout<Coords1d, Coords1d>>,
 }
 
-impl<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive, A: Routine<()>>
+impl<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive, A: Routine<()>>
     ConcreteInputsFactory<A> for TensorMapInputs<Lhs, Rhs, EO>
 {
     fn create<R: Runtime>(
@@ -525,16 +525,16 @@ impl<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive, A: Routine<()>>
     }
 }
 
-#[cube]
+#[ruda]
 impl<Config: RuntimeConfig> MatmulArgs for TensorMapArgs<Config> {
-    type Input<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive> =
+    type Input<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive> =
         TensorMapInputs<Lhs, Rhs, EO>;
-    type Output<EO: CubePrimitive> = TensorOutput<EO>;
+    type Output<EO: RudaPrimitive> = TensorOutput<EO>;
     type Config = Config;
-    type State<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive> =
+    type State<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive> =
         (TensorMapInputs<Lhs, Rhs, EO>, TensorOutput<EO>, Config);
 
-    fn init_state<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn init_state<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         input: &Self::Input<Lhs, Rhs, EO>,
         output: &mut Self::Output<EO>,
         config: Self::Config,
@@ -545,39 +545,39 @@ impl<Config: RuntimeConfig> MatmulArgs for TensorMapArgs<Config> {
         (*input, *output, config)
     }
 
-    fn view_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Lhs, BatchedCoords> {
         state.0.lhs
     }
 
-    fn batch_lhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_lhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         batch
     }
 
-    fn view_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> View<Rhs, BatchedCoords> {
         state.0.rhs
     }
 
-    fn batch_rhs<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_rhs<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         _state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         batch
     }
 
-    fn view_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> ComptimeOption<View<EO, BatchedCoords>> {
         state.0.acc
     }
 
-    fn batch_acc<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_acc<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
@@ -589,20 +589,20 @@ impl<Config: RuntimeConfig> MatmulArgs for TensorMapArgs<Config> {
         }
     }
 
-    fn view_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn view_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &mut Self::State<Lhs, Rhs, EO>,
     ) -> View<EO, BatchedCoords, ReadWrite> {
         state.1.view
     }
 
-    fn batch_out<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn batch_out<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
         batch: usize,
     ) -> usize {
         state.1.batch.to_source_pos(batch)
     }
 
-    fn runtime_config<Lhs: CubePrimitive, Rhs: CubePrimitive, EO: CubePrimitive>(
+    fn runtime_config<Lhs: RudaPrimitive, Rhs: RudaPrimitive, EO: RudaPrimitive>(
         state: &Self::State<Lhs, Rhs, EO>,
     ) -> Self::Config {
         state.2.clone()

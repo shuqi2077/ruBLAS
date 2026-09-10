@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::{
@@ -8,7 +8,7 @@ use crate::kernel_ir::{
 };
 
 pub use ruda_kernel::tiling::{
-    PlaneFlowCounts, PlaneFlowPartitionRule, SpecializedCubeDim as PlaneFlowConfig,
+    PlaneFlowCounts, PlaneFlowPartitionRule, SpecializedRudaDim as PlaneFlowConfig,
 };
 
 /// Build a [`PlaneFlowConfig`] from matmul-specific load-flow inputs.
@@ -49,17 +49,17 @@ pub fn make_plane_flow_config(
     })
 }
 
-#[derive(CubeType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(RudaType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
 /// Threshold of plane id at which the roles change
 ///
-/// Note: this struct is only necessary because Cube enums cannot hold
+/// Note: this struct is only necessary because Ruda enums cannot hold
 /// a comptime value directly
 pub struct PartitionThreshold {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     threshold: u32,
 }
 
-#[derive(CubeType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(RudaType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
 /// Rule to distinguish a plane's role based on its plane id
 pub enum PlaneFlowPartition {
     /// All planes are in the main flow, this is equivalent of having no specialization
@@ -72,9 +72,9 @@ pub enum PlaneFlowPartition {
     LoadOnlyLast(PartitionThreshold),
 }
 
-#[cube]
+#[ruda]
 impl PlaneFlowPartition {
-    /// Make a cube role rule from comptime config
+    /// Make a ruda role rule from comptime config
     pub fn new(#[comptime] comptime_rule: PlaneFlowPartitionRule) -> PlaneFlowPartition {
         match comptime_rule {
             PlaneFlowPartitionRule::MainFlowOnly => PlaneFlowPartition::new_MainFlowOnly(),

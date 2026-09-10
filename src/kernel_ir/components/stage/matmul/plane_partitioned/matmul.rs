@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::global::PlaneFlowPartition, components::global::PlaneFlowPartitionRule,
     components::stage::matmul::partitioned_matmul::PartitionedStageMatmul,
@@ -30,7 +30,7 @@ pub type PlaneMatmul<MP: MatmulTypes, StageLhs, StageRhs, StageAcc, StageOut> =
 /// Defines how to partition across planes
 pub struct PlanePartitioner {}
 
-#[cube]
+#[ruda]
 impl StagePartitioner for PlanePartitioner {
     type Scope = Plane;
 

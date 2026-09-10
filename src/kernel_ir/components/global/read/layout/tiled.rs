@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::layout::Coords2d;
 use ruda_kernel::library::tensor::layout::Layout;
@@ -10,22 +10,22 @@ use crate::kernel_ir::definition::StageIdent;
 pub type TiledCoords = (Coords2d, u32);
 
 /// Tiling mapping on a 2D layout. Unit offset is translated to a 2D offset within the tile.
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct TiledLayout {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     ident: StageIdent,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     config: StageMemoryConfig,
 }
 
-#[cube]
+#[ruda]
 impl TiledLayout {
     pub fn new(#[comptime] ident: StageIdent, #[comptime] config: StageMemoryConfig) -> Self {
         TiledLayout { ident, config }
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for TiledLayout {
     type Coordinates = TiledCoords;
     type SourceCoordinates = Coords2d;

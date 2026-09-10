@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::global::{GlobalReaderConfig, PlaneFlowPartition};
 use crate::kernel_ir::components::global::{
     SharedGlobalMatmulConfig,
@@ -31,7 +31,7 @@ use ruda_kernel::tiling::{InvalidConfigError, tile::Strided};
 
 use super::{LoadingJob, LoadingValidation};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using all planes.
 /// Unit with pos X loads vectors with indices X, X + NUM_UNITS, X + 2 * NUM_UNITS, ...
 pub struct AsyncPartialStridedLoading {}
@@ -98,7 +98,7 @@ impl LoadMaxRoundPlaneCount for AsyncPartialStridedLoading {
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> PartialLoadingStrategy<RC> for AsyncPartialStridedLoading {
     type TilingLayout = StridedTilingLayout;
     type SyncStrategy = AsyncCopy;
@@ -133,21 +133,21 @@ impl<RC: RuntimeConfig> PartialLoadingStrategy<RC> for AsyncPartialStridedLoadin
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncPartialStridedJob {
     unit_position_base: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_index: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     unit_count: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     copy_vector_size: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     LoadingJob<EG, NG, ES, NS, StridedTilingLayout, AsyncCopy> for AsyncPartialStridedJob
 {
@@ -199,7 +199,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> AsyncPartialLoadingStrategy<RC> for AsyncPartialStridedLoading {
     fn arrival_count<S: StageConfig>(#[comptime] config: SharedGlobalMatmulConfig<S>) -> u32 {
         let total_load_units = config.plane_flow_config().counts.load_only * config.plane_dim();

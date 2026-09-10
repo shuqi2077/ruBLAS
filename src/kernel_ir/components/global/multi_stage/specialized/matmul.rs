@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::global::read::{PartialStageGlobalReader, StageBuffer};
 use crate::kernel_ir::components::global::{
     GlobalConfig, GlobalWriter,
@@ -44,7 +44,7 @@ pub struct SpecializedMatmul<
     _writer: PhantomData<GW>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes, SMM, RC, L, AL, GW> GlobalMatmul<RC, MP>
     for SpecializedMatmul<MP, SMM, RC, L, AL, GW>
 where
@@ -139,7 +139,7 @@ where
         let mut acc_barrier = AL::SyncStrategy::create_barrier();
         let acc_stage = acc_reader.map(|mut reader| {
             reader.load_stage(&mut acc_barrier, config.acc_reader_config);
-            sync_cube();
+            sync_ruda();
             reader.stage()
         });
 
@@ -165,7 +165,7 @@ where
 
             L::barrier_post_init();
         }
-        sync_cube();
+        sync_ruda();
 
         let mut phase = 0;
 

@@ -1,12 +1,12 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::prelude::CubeType;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::prelude::RudaType;
 
 use crate::kernel_ir::components::{
     global::read::{FullLoadingStrategy, PartialLoadingStrategy},
     stage::StageFamily,
 };
 
-#[derive(Copy, Clone, CubeType)]
+#[derive(Copy, Clone, RudaType)]
 /// Identifier for the stage in global double buffering
 pub enum StageBuffer {
     /// First buffer
@@ -24,10 +24,10 @@ impl StageBuffer {
     }
 }
 
-#[derive(CubeType, Clone)]
+#[derive(RudaType, Clone)]
 /// Comptime counter for loading tasks
 pub struct TaskCounter {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub counter: u32,
 }
 

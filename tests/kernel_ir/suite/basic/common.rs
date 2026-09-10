@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::Runtime;
 use ruda_test_runtime::TestRuntime;
 use ruda_kernel::dsl::client::ComputeClient;
@@ -15,12 +15,12 @@ pub(crate) fn client() -> ComputeClient<TestRuntime> {
 }
 
 pub(crate) fn f16_elems() -> MatmulGlobalElems {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     MatmulElems::from_single_dtype(half::f16::as_type_native_unchecked()).as_global_elems()
 }
 
 pub(crate) fn f32_elems() -> MatmulGlobalElems {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     MatmulElems::from_single_dtype(f32::as_type_native_unchecked()).as_global_elems()
 }
 

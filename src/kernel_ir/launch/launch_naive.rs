@@ -1,7 +1,7 @@
 //! Naive matmul kernel implementation
 //!
 //! Each local unit will compute a single element of the output matrix.
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::MatrixBatchLayout;
 use ruda_kernel::library::tensor::matrix_batch_layout;
@@ -10,7 +10,7 @@ use ruda_kernel::tiling::InputBinding;
 
 use crate::kernel_ir::{
     definition::{MatmulElems, MatmulProblem, MatmulSetupError},
-    definition::{MatmulVectorSizes, cube_mapping_launch},
+    definition::{MatmulVectorSizes, ruda_mapping_launch},
 };
 
 use crate::kernel_ir::{
@@ -144,13 +144,13 @@ pub fn launch_ref<R: Runtime>(
 
     NaiveRoutine::launch::<TensorArgs, R>(
         client,
-        launch_info.cube_dim,
-        launch_info.cube_count_plan.resolve(),
+        launch_info.ruda_dim,
+        launch_info.ruda_count_plan.resolve(),
         launch_info.address_type,
         input,
         output,
         (),
-        cube_mapping_launch(&launch_info.cube_count_plan),
+        ruda_mapping_launch(&launch_info.ruda_count_plan),
         launch_info.blueprint,
         dtypes,
         &launch_info.vector_sizes,

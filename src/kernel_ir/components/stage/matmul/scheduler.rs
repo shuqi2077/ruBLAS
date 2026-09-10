@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::tiling::PartitionSize;
 
@@ -13,14 +13,14 @@ pub enum PartitionSchedulerScheme {
 
 /// Schedules global indices for M, N, and K axes in a partitioned matmul.
 /// Internally uses an `AxisScheduler` per axis.
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct PartitionScheduler {
     pub m: AxisScheduler,
     pub n: AxisScheduler,
     pub k: AxisScheduler,
 }
 
-#[cube]
+#[ruda]
 impl PartitionScheduler {
     /// Creates a `PartitionScheduler` for a partition at (partition_index_m, partition_index_n).
     ///
@@ -92,7 +92,7 @@ impl PartitionScheduler {
 }
 
 /// Axis-specific scheduler that delegates to either `OffsetAxisScheduler` or `NaiveAxisScheduler`.
-#[derive(CubeType)]
+#[derive(RudaType)]
 #[allow(unused)]
 pub enum AxisScheduler {
     Offset(OffsetAxisScheduler),
@@ -104,22 +104,22 @@ pub enum AxisScheduler {
 /// Combines:
 /// - `inner_offset`: rotation inside this partition.
 /// - `outer_offset`: global shift for skipping previous partitions.
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct OffsetAxisScheduler {
     inner_offset: u32,
     outer_offset: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     len: u32,
 }
 
 /// Schedules indices for one axis in row-major order.
 /// Just adds a global shift based on the partition index.
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct NaiveAxisScheduler {
     outer_offset: u32,
 }
 
-#[cube]
+#[ruda]
 impl AxisScheduler {
     pub fn map(&self, i: u32) -> u32 {
         match self {
@@ -129,7 +129,7 @@ impl AxisScheduler {
     }
 }
 
-#[cube]
+#[ruda]
 impl OffsetAxisScheduler {
     pub fn new(
         inner_offset: u32,
@@ -150,7 +150,7 @@ impl OffsetAxisScheduler {
     }
 }
 
-#[cube]
+#[ruda]
 impl NaiveAxisScheduler {
     pub fn new(partition_index: u32, #[comptime] len: u32) -> NaiveAxisScheduler {
         let outer_offset = partition_index * len;

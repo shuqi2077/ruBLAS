@@ -5,7 +5,7 @@
 //! - [`cpu_reference_result`] runs the naive triple-loop on the same seeded
 //!   inputs and returns its output as a [`HostData`].
 
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_test_utils::TestRuntime;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::TensorHandle;

@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::ir::DeviceProperties;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::tiling::stage::StageMemoryConfig;
@@ -17,7 +17,7 @@ use crate::kernel_ir::{
     definition::{AccG, MatmulSetupError},
     definition::{LhsG, MatmulElems, MatmulVectorSizes, RhsG},
     definition::{MatmulProblem, MatmulTypes},
-    {components::CubeDimResource, launch::RuntimeConfig},
+    {components::RudaDimResource, launch::RuntimeConfig},
 };
 use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
@@ -44,11 +44,11 @@ pub trait GlobalMatmulFamily<RC: RuntimeConfig>: Send + Sync + 'static {
     fn num_stages() -> NumStages;
 
     /// Returns the compute resources required to run this matmul.
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &TilingBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError>;
+    ) -> Result<RudaDimResource, MatmulSetupError>;
 
     fn validate_blueprint<R: Runtime>(
         client: &ComputeClient<R>,
@@ -59,13 +59,13 @@ pub trait GlobalMatmulFamily<RC: RuntimeConfig>: Send + Sync + 'static {
     ) -> Result<(), MatmulSetupError>;
 }
 
-#[cube]
+#[ruda]
 /// Provides matrix multiplication operations at the global level.
 ///
 /// At the global level,
 ///  - Inputs are views over global memory, meaning access is given to
 ///    only parts of the global memory inputs at once.
-///  - All planes within a Cube are used to solve the problem
+///  - All planes within a Ruda are used to solve the problem
 ///  - Dimensions M and N are fixed to an integer, but K is arbitrary large.
 ///    The matrix multiplication works only for size (M, _) · (_, N) = (M, N).
 ///    M and N should match the underlying Stage matmul's M and N.
@@ -82,16 +82,16 @@ pub trait GlobalMatmul<RC: RuntimeConfig, MP: MatmulTypes>: 'static + Send + Syn
     type Config: GlobalConfig;
 
     /// Global reader for matrix A (Lhs)
-    type LhsGlobalReader: CubeType;
+    type LhsGlobalReader: RudaType;
     /// Global reader for matrix B (Rhs)
-    type RhsGlobalReader: CubeType;
+    type RhsGlobalReader: RudaType;
     /// Global reader for matrix C (Accumulator/Bias)
-    type AccGlobalReader: CubeType;
+    type AccGlobalReader: RudaType;
     /// Writer to store the output stage into global memory
-    type GlobalWriter: CubeType;
+    type GlobalWriter: RudaType;
 
     /// The accumulator type for the tile matmul
-    type Accumulators: CubeType;
+    type Accumulators: RudaType;
 
     /// Performs the matrix multiplication over data loaded by the
     /// Lhs and Rhs readers, over the range given for K, and stores with
@@ -190,8 +190,8 @@ impl<S: StageConfig> GlobalConfig for SharedGlobalMatmulConfig<S> {
         self.rhs_reader_config
     }
 
-    fn cube_dim(&self) -> CubeDim {
-        CubeDim::new_2d(self.plane_dim(), self.num_planes)
+    fn ruda_dim(&self) -> RudaDim {
+        RudaDim::new_2d(self.plane_dim(), self.num_planes)
     }
 
     fn global_vector_sizes(&self) -> MatmulVectorSizes {
@@ -222,7 +222,7 @@ pub trait GlobalConfig:
     fn lhs_reader_config(&self) -> GlobalReaderConfig;
     fn rhs_reader_config(&self) -> GlobalReaderConfig;
     fn writer_config(&self) -> GlobalWriterConfig;
-    fn cube_dim(&self) -> CubeDim;
+    fn ruda_dim(&self) -> RudaDim;
     fn global_vector_sizes(&self) -> MatmulVectorSizes;
     fn must_sync_plane_after_execution(&self) -> bool;
 }

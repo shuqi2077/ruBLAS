@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::stage::{
     ContiguousTilingLayout, RowMajorTilingOrder, Stage, StageFamily, StridedStageMemory,
     TilingLayout,
@@ -18,7 +18,7 @@ impl StageFamily<ReadWrite> for PartitionedStageFamily {
     type Stage<ES: Numeric, NS: Size, T: TilingLayout> = PartitionedStage<ES, NS>;
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Layoutless stage for current writers. Tile only depends on the unit index, not the out tile.
 pub struct PartitionedStage<ES: Numeric, NS: Size> {
     /// Underlying shared memory
@@ -26,7 +26,7 @@ pub struct PartitionedStage<ES: Numeric, NS: Size> {
     pub unit_tile: StridedTile<ES, NS, ReadWrite>,
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, NS: Size> PartitionedStage<ES, NS> {
     /// Instantiate a new stage memory for the given identifier
     pub fn new(
@@ -51,7 +51,7 @@ impl<ES: Numeric, NS: Size> PartitionedStage<ES, NS> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, NS: Size> Stage<ES, ReadWrite> for PartitionedStage<ES, NS> {
     fn tile<Sc: TileScope>(this: &Self, _tile: Coords2d) -> Tile<ES, Sc, ReadWrite> {
         Tile::new_SharedMemory(SharedTile::wrap::<NS>(this.unit_tile))

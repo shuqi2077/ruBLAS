@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::{
         global::{
@@ -25,11 +25,11 @@ pub trait GlobalWriterFamily: 'static + Send + Sync {
         >;
 }
 
-#[cube]
+#[ruda]
 /// Responsible of writing the accumulated stage matmul output
 /// to global memory
 pub trait GlobalWriter<IP: MatrixTypes>:
-    WriteEventListener + CubeType + 'static + Send + Sync
+    WriteEventListener + RudaType + 'static + Send + Sync
 {
     /// Tile stage that stores the data for this writer
     type Stage: Stage<IP::Stage, ReadWrite>;

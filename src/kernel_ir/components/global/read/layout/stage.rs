@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::layout::Coords2d;
 use ruda_kernel::library::tensor::layout::Layout;
@@ -6,20 +6,20 @@ use ruda_kernel::library::tensor::layout::LayoutExpand;
 use ruda_kernel::tiling::{MatrixLayout, stage::StageMemoryConfig};
 
 /// Full stage mapping on a 2D layout. Stage offset is translated to a 2D offset within the stage.
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct FullStageLayout {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     config: StageMemoryConfig,
 }
 
-#[cube]
+#[ruda]
 impl FullStageLayout {
     pub fn new(#[comptime] config: StageMemoryConfig) -> Self {
         FullStageLayout { config }
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for FullStageLayout {
     type Coordinates = u32;
     type SourceCoordinates = Coords2d;

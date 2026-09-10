@@ -1,6 +1,6 @@
 //! Shared helpers for the extended (forced-blueprint) tier.
 
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::Runtime;
 use ruda_test_runtime::TestRuntime;
 use ruda_kernel::dsl::client::ComputeClient;
@@ -16,7 +16,7 @@ use rublas::kernel_ir::{
 };
 use ruda_kernel::tiling::{
     MatrixLayout, PartitionSize, StageSize, SwizzleModes, TileSize,
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint},
 };
 
 pub(crate) fn client() -> ComputeClient<TestRuntime> {
@@ -24,12 +24,12 @@ pub(crate) fn client() -> ComputeClient<TestRuntime> {
 }
 
 pub(crate) fn f16_elems() -> MatmulGlobalElems {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     MatmulElems::from_single_dtype(half::f16::as_type_native_unchecked()).as_global_elems()
 }
 
 pub(crate) fn f32_elems() -> MatmulGlobalElems {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     MatmulElems::from_single_dtype(f32::as_type_native_unchecked()).as_global_elems()
 }
 
@@ -118,7 +118,7 @@ pub(crate) fn plane_blueprint_with(
     partition: PartitionSize,
     stage: StageSize,
     swizzle: SwizzleModes,
-    hypercube: HypercubeBlueprint,
+    hyperruda: HyperrudaBlueprint,
     partition_buffering: PartitionBuffering,
     specialization: LoadFlows,
 ) -> TilingBlueprint {
@@ -126,15 +126,15 @@ pub(crate) fn plane_blueprint_with(
     let plane_dim = client.properties().hardware.plane_size_max;
     TilingBlueprint::builder(TileMatmulKind::Cmma, scheme, plane_dim, problem)
         .shared_swizzle(swizzle)
-        .hypercube_blueprint(hypercube)
+        .hyperruda_blueprint(hyperruda)
         .partition_buffering(partition_buffering)
         .load_specialization_config(specialization)
         .build()
 }
 
-pub(crate) fn default_hypercube() -> HypercubeBlueprint {
-    HypercubeBlueprint::builder()
+pub(crate) fn default_hyperruda() -> HyperrudaBlueprint {
+    HyperrudaBlueprint::builder()
         .global_order(GlobalOrder::RowMajor)
-        .cube_count_strategy(CubeCountStrategy::FromProblem)
+        .ruda_count_strategy(RudaCountStrategy::FromProblem)
         .build()
 }

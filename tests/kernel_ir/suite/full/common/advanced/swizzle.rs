@@ -11,7 +11,7 @@ mod no_swizzle {
         }
     }
 
-    include!("hypercube.rs");
+    include!("hyperruda.rs");
 }
 
 mod b32 {
@@ -27,7 +27,7 @@ mod b32 {
         }
     }
 
-    include!("hypercube.rs");
+    include!("hyperruda.rs");
 }
 
 mod b64 {
@@ -43,7 +43,7 @@ mod b64 {
         }
     }
 
-    include!("hypercube.rs");
+    include!("hyperruda.rs");
 }
 
 mod b128 {
@@ -59,5 +59,5 @@ mod b128 {
         }
     }
 
-    include!("hypercube.rs");
+    include!("hyperruda.rs");
 }

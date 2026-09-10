@@ -1,5 +1,5 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::CubeDim;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::RudaDim;
 
 use crate::kernel_ir::{
     components::global::multi_stage::LoadMaxRoundPlaneCount,
@@ -7,14 +7,14 @@ use crate::kernel_ir::{
 };
 
 #[allow(unused_variables)]
-pub fn cube_dim_validation(cube_dim: CubeDim) -> Result<(), MatmulSetupError> {
+pub fn ruda_dim_validation(ruda_dim: RudaDim) -> Result<(), MatmulSetupError> {
     #[cfg(target_os = "macos")]
     {
-        if cube_dim.num_elems() >= 512 {
+        if ruda_dim.num_elems() >= 512 {
             use crate::kernel_ir::definition::{MatmulAvailabilityError, MatmulSetupError};
 
             return Err(MatmulSetupError::Unavailable(
-                MatmulAvailabilityError::CubeDimTooBig(cube_dim),
+                MatmulAvailabilityError::RudaDimTooBig(ruda_dim),
             ));
         }
     }

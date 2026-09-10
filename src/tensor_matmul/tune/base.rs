@@ -1,4 +1,4 @@
-use ruda_kernel::{dsl::{Runtime, CubeTuneId}, tensor::RudaTensor};
+use ruda_kernel::{dsl::{Runtime, RudaTuneId}, tensor::RudaTensor};
 use crate::tensor_matmul::{F32MathMode, launch_matmul_with_precision, launch_matmul_naive, utils::init_matmul_output};
 use ruda_core::tensor::DType;
 use ruda_kernel::library::tensor::MatrixBatchLayout;
@@ -44,8 +44,8 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
     let client = lhs.client.clone();
     let num_cpu_cores = client.properties().hardware.num_cpu_cores;
 
-    static STRICT_TUNER: LocalTuner<MatmulAutotuneKey, CubeTuneId> = LocalTuner::new("rublas::matmul::strict_f32::v1");
-    static TF32_TUNER: LocalTuner<MatmulAutotuneKey, CubeTuneId> = LocalTuner::new("rublas::matmul::allow_tf32::v1");
+    static STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::strict_f32::v1");
+    static TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::allow_tf32::v1");
     let tuner = match f32_math {
         F32MathMode::Strict => &STRICT_TUNER,
         F32MathMode::AllowTf32 => &TF32_TUNER,
@@ -454,7 +454,7 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
     });
 
     tuner.execute(
-        &CubeTuneId::new(&lhs.client, &lhs.device),
+        &RudaTuneId::new(&lhs.client, &lhs.device),
         &client,
         tunables,
         (lhs, rhs, output.clone()),

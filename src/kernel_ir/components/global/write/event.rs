@@ -1,8 +1,8 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::layout::Coords2d;
 
-#[derive(CubeType, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(RudaType, Debug, Clone, Copy, PartialEq, Eq)]
 /// Events that occur during the process of storing tiles to
 /// a stage and executing writes
 pub enum WriteEvent {
@@ -14,8 +14,8 @@ pub enum WriteEvent {
     Finish,
 }
 
-#[cube]
+#[ruda]
 /// Function that is called at each [WriteEvent]
-pub trait WriteEventListener: CubeType {
+pub trait WriteEventListener: RudaType {
     fn on_event(this: &mut Self, event: WriteEvent);
 }

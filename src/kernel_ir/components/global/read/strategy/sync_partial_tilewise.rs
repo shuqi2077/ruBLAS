@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::{
@@ -28,7 +28,7 @@ use ruda_kernel::tiling::{
 
 use super::{LoadingJob, LoadingValidation};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Each tile is guaranteed to be loaded entirely by the same plane.
 /// Each plane can load multiple tiles, provided the number of planes evenly divides the number of tiles.
 /// In this case, a plane loads contiguous tiles following the `TilingOrder`,
@@ -37,7 +37,7 @@ use super::{LoadingJob, LoadingValidation};
 ///
 /// Only supports RowMajorTilingOrder for Lhs and ColMajorTilingOrder for Rhs
 pub struct SyncPartialTilewiseLoading<T: TilingOrder> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     tiling_order: PhantomData<T>,
 }
 
@@ -116,7 +116,7 @@ impl<T: TilingOrder> LoadingValidation for SyncPartialTilewiseLoading<T> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> PartialLoadingStrategy<RC>
     for SyncPartialTilewiseLoading<TO>
 {
@@ -163,22 +163,22 @@ impl<TO: TilingOrder, RC: RuntimeConfig> PartialLoadingStrategy<RC>
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct SyncPartialTilewiseJob {
     num_tiles_to_skip: u32,
     stage_index: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_width: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_vectors_per_tile: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_vectors_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     plane_dim: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     LoadingJob<EG, NG, ES, NS, ContiguousTilingLayout<TO>, Synchronous> for SyncPartialTilewiseJob
 {
@@ -229,7 +229,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     }
 }
 
-#[cube]
+#[ruda]
 impl SyncPartialTilewiseJob {
     #[allow(clippy::too_many_arguments)]
     fn load_and_store_vector<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>(

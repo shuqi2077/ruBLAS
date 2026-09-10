@@ -1,21 +1,21 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::layout::*;
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct VecLayout {
     batch: usize,
     shape: Coords1d,
 }
 
-#[cube]
+#[ruda]
 impl VecLayout {
     pub fn new(batch: usize, shape: Coords1d) -> Self {
         VecLayout { batch, shape }
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for VecLayout {
     type Coordinates = Coords1d;
     type SourceCoordinates = (usize, u32, u32);
@@ -37,20 +37,20 @@ impl Layout for VecLayout {
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct MatLayout {
     batch: usize,
     shape: Coords2d,
 }
 
-#[cube]
+#[ruda]
 impl MatLayout {
     pub fn new(batch: usize, shape: Coords2d) -> Self {
         MatLayout { batch, shape }
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for MatLayout {
     type Coordinates = Coords2d;
     type SourceCoordinates = (usize, u32, u32);

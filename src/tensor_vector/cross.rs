@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::tensor::contiguous::into_contiguous;
 use ruda_kernel::tensor::layout::address_type;
@@ -7,10 +7,10 @@ use ruda_kernel::tensor::allocation::empty_device_dtype;
 use ruda_kernel::tensor::permutation::swap_dims;
 use ruda_kernel::tensor::RudaTensor;
 use ruda_kernel::library::tensor::layout::linear::LinearView;
-use ruda_kernel::dsl::calculate_cube_count_elemwise;
+use ruda_kernel::dsl::calculate_ruda_count_elemwise;
 use ruda_kernel::dsl::prelude::*;
 
-#[cube(launch_unchecked, address_type = "dynamic")]
+#[ruda(launch_unchecked, address_type = "dynamic")]
 fn cross_kernel<E: Float>(
     lhs: &LinearView<E>,
     rhs: &LinearView<E>,
@@ -86,15 +86,15 @@ pub fn cross<R: Runtime>(
     // Number of vectors to process
     let num_vectors = output_shape.num_elements() / 3;
 
-    let cube_dim = CubeDim::new(lhs.client.properties(), num_vectors);
-    let cube_count = calculate_cube_count_elemwise(&lhs.client, num_vectors, cube_dim);
+    let ruda_dim = RudaDim::new(lhs.client.properties(), num_vectors);
+    let ruda_count = calculate_ruda_count_elemwise(&lhs.client, num_vectors, ruda_dim);
     let dtype = lhs.dtype;
 
     unsafe {
         cross_kernel::launch_unchecked(
             &output.client,
-            cube_count,
-            cube_dim,
+            ruda_count,
+            ruda_dim,
             address_type!(lhs, rhs, output),
             lhs.into_linear_view_like(&output),
             rhs.into_linear_view_like(&output),

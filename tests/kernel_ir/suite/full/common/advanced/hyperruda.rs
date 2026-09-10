@@ -1,15 +1,15 @@
 pub mod row_fp {
     use super::*;
     use rublas::kernel_ir::definition::{MatmulProblem, TilingScheme};
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::RowMajor)
-            .cube_count_strategy(CubeCountStrategy::FromProblem)
+            .ruda_count_strategy(RudaCountStrategy::FromProblem)
             .build()
     }
 
@@ -19,15 +19,15 @@ pub mod row_fp {
 mod swizzlecol_fp {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleCol(2))
-            .cube_count_strategy(CubeCountStrategy::FromProblem)
+            .ruda_count_strategy(RudaCountStrategy::FromProblem)
             .build()
     }
 
@@ -37,15 +37,15 @@ mod swizzlecol_fp {
 mod col_fl {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::ColMajor)
-            .cube_count_strategy(CubeCountStrategy::Flattened)
+            .ruda_count_strategy(RudaCountStrategy::Flattened)
             .build()
     }
 
@@ -55,15 +55,15 @@ mod col_fl {
 mod swizzlerow_fl {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(2))
-            .cube_count_strategy(CubeCountStrategy::Flattened)
+            .ruda_count_strategy(RudaCountStrategy::Flattened)
             .build()
     }
 
@@ -73,18 +73,18 @@ mod swizzlerow_fl {
 mod row_sm_exact {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::RowMajor)
-            .cube_count_strategy(CubeCountStrategy::Sm {
+            .ruda_count_strategy(RudaCountStrategy::Sm {
                 num_sms: 4,
                 sm_usage: SmAllocation::Exact,
-                cubes_first: false,
+                rudas_first: false,
             })
             .build()
     }
@@ -95,18 +95,18 @@ mod row_sm_exact {
 mod row_sm_full {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::RowMajor)
-            .cube_count_strategy(CubeCountStrategy::Sm {
+            .ruda_count_strategy(RudaCountStrategy::Sm {
                 num_sms: 4,
                 sm_usage: SmAllocation::Full,
-                cubes_first: false,
+                rudas_first: false,
             })
             .build()
     }
@@ -114,21 +114,21 @@ mod row_sm_full {
     include!("partition_buffering.rs");
 }
 
-mod swizzlerow_cube_full {
+mod swizzlerow_ruda_full {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(2))
-            .cube_count_strategy(CubeCountStrategy::Sm {
+            .ruda_count_strategy(RudaCountStrategy::Sm {
                 num_sms: 4,
                 sm_usage: SmAllocation::Full,
-                cubes_first: true,
+                rudas_first: true,
             })
             .build()
     }
@@ -139,15 +139,15 @@ mod swizzlerow_cube_full {
 mod swizzlerow_spread {
     use super::*;
     use rublas::kernel_ir::definition::TilingScheme;
-    use ruda_kernel::tiling::cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation};
+    use ruda_kernel::tiling::ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation};
 
-    fn hypercube_blueprint(
+    fn hyperruda_blueprint(
         tiling_scheme: &TilingScheme,
         problem: &MatmulProblem,
-    ) -> HypercubeBlueprint {
-        HypercubeBlueprint::builder()
+    ) -> HyperrudaBlueprint {
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(2))
-            .cube_count_strategy(CubeCountStrategy::Spread)
+            .ruda_count_strategy(RudaCountStrategy::Spread)
             .build()
     }
 

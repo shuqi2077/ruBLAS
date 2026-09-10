@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::batch::{
@@ -10,10 +10,10 @@ use crate::kernel_ir::components::batch::{
 };
 
 use crate::kernel_ir::{
-    definition::{cube_pos_to_matrix_batch, *},
+    definition::{ruda_pos_to_matrix_batch, *},
     launch::MatmulArgs,
 };
-use ruda_kernel::dsl::cube;
+use ruda_kernel::dsl::ruda;
 use ruda_kernel::dsl::num_traits::Zero;
 use ruda_kernel::library::tensor::layout::Coords1d;
 use ruda_kernel::library::tensor::layout::Coords2d;
@@ -21,7 +21,7 @@ use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::View;
 use ruda_kernel::tiling::MatrixLayout;
 
-#[cube(launch_unchecked, explicit_define, address_type = "dynamic")]
+#[ruda(launch_unchecked, explicit_define, address_type = "dynamic")]
 #[allow(clippy::type_complexity)]
 /// Launches the matmul kernel
 pub(crate) fn matmul_entry<
@@ -40,7 +40,7 @@ pub(crate) fn matmul_entry<
     >,
     output: &mut <Args as MatmulArgs>::Output<Vector<Acc, AccSize>>,
     runtime_config: (),
-    cube_mapping: CubeMapping,
+    ruda_mapping: RudaMapping,
     #[comptime] blueprint: GemvPlaneParallelBlueprint,
     #[define(Lhs, Rhs, Acc)] _global: [StorageType; 3],
     #[define(LhsSize, RhsSize, AccSize)] _sizes: [usize; 3],
@@ -96,20 +96,20 @@ pub(crate) fn matmul_entry<
         (Lhs, LhsSize, Lhs, LhsSize, RegisterLhs, LhsSize),
         (Rhs, RhsSize, Rhs, RhsSize, RegisterRhs, RhsSize),
         (Acc, AccSize, Acc, AccSize, RegisterAcc, AccSize),
-    )>::execute::<Args>(&mut state, cube_mapping, config);
+    )>::execute::<Args>(&mut state, ruda_mapping, config);
 }
 
 pub struct VecMatPlaneParallel<MP: MatmulTypes> {
     _phantom: PhantomData<MP>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
     type Config = VecMatPlaneParallelConfig;
 
     fn execute<Args: MatmulArgs>(
         state: &mut Args::State<LhsG<MP>, RhsG<MP>, AccG<MP>>,
-        cube_mapping: CubeMapping,
+        ruda_mapping: RudaMapping,
         #[comptime] config: Self::Config,
     ) {
         let lhs = Args::view_lhs(state);
@@ -118,11 +118,11 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
 
         let (_, m, k) = lhs.shape();
         let (_, _, n) = rhs.shape();
-        let (matrix_cube, batch_cube) = cube_pos_to_matrix_batch(&cube_mapping);
+        let (matrix_ruda, batch_ruda) = ruda_pos_to_matrix_batch(&ruda_mapping);
 
-        let lhs_batch = Args::batch_lhs(state, batch_cube as usize);
-        let rhs_batch = Args::batch_rhs(state, batch_cube as usize);
-        let out_batch = Args::batch_out(state, batch_cube as usize);
+        let lhs_batch = Args::batch_lhs(state, batch_ruda as usize);
+        let rhs_batch = Args::batch_rhs(state, batch_ruda as usize);
+        let out_batch = Args::batch_out(state, batch_ruda as usize);
 
         let vector_size = comptime![Ord::max(lhs.vector_size(), rhs.vector_size())];
         let size!(N) = vector_size;
@@ -134,7 +134,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
                 lhs.view(VecLayout::new(lhs_batch, k as usize)),
                 rhs.view(MatLayout::new(rhs_batch, (k, n))),
                 out.view_mut(VecLayout::new(out_batch, n as usize)),
-                matrix_cube,
+                matrix_ruda,
                 k,
                 config.num_planes,
                 config.plane_dim,
@@ -154,7 +154,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
                 lhs.view(VecLayout::new(lhs_batch, k as usize)),
                 rhs.view(MatLayout::new(rhs_batch, (k, n))),
                 out.view_mut(VecLayout::new(out_batch, n as usize)),
-                matrix_cube * config.num_planes + UNIT_POS_Y,
+                matrix_ruda * config.num_planes + UNIT_POS_Y,
                 k,
                 vector_size as u32,
                 MatrixLayout::RowMajor,
@@ -164,7 +164,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
                 rhs.view(VecLayout::new(rhs_batch, k as usize)),
                 lhs.view(MatLayout::new(lhs_batch, (m, k))),
                 out.view_mut(VecLayout::new(out_batch, m as usize)),
-                matrix_cube,
+                matrix_ruda,
                 k,
                 config.num_planes,
                 config.plane_dim,
@@ -184,7 +184,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
                 rhs.view(VecLayout::new(rhs_batch, k as usize)),
                 lhs.view(MatLayout::new(lhs_batch, (m, k))),
                 out.view_mut(VecLayout::new(out_batch, m as usize)),
-                matrix_cube * config.num_planes + UNIT_POS_Y,
+                matrix_ruda * config.num_planes + UNIT_POS_Y,
                 k,
                 vector_size as u32,
                 MatrixLayout::ColMajor,
@@ -194,12 +194,12 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatPlaneParallel<MP> {
     }
 }
 
-#[cube]
-fn execute_gemv<V: CubePrimitive, M: CubePrimitive, O: CubePrimitive, AccR: Numeric, N: Size>(
+#[ruda]
+fn execute_gemv<V: RudaPrimitive, M: RudaPrimitive, O: RudaPrimitive, AccR: Numeric, N: Size>(
     vec: View<V, Coords1d>,
     mat: View<M, Coords2d>,
     out: View<O, Coords1d, ReadWrite>,
-    cube_id: u32,
+    ruda_id: u32,
     k_dim: u32,
     #[comptime] num_planes: u32,
     #[comptime] plane_dim: u32,
@@ -210,7 +210,7 @@ fn execute_gemv<V: CubePrimitive, M: CubePrimitive, O: CubePrimitive, AccR: Nume
     let plane_id = UNIT_POS_Y;
     let unit_id = UNIT_POS_X;
 
-    let mn_pos = cube_id * num_planes + plane_id;
+    let mn_pos = ruda_id * num_planes + plane_id;
 
     // The first if statement is running at comptime.
     if comptime!(matches!(check_bounds, CheckBounds::Terminate)) {
@@ -281,11 +281,11 @@ fn execute_gemv<V: CubePrimitive, M: CubePrimitive, O: CubePrimitive, AccR: Nume
     }
 }
 
-#[cube]
+#[ruda]
 fn execute_gemv_transposed<
     V: Scalar,
     M: Scalar,
-    O: CubePrimitive,
+    O: RudaPrimitive,
     AccR: Numeric,
     SM: Scalar,
     VS: Size,

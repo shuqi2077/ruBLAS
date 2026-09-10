@@ -4,7 +4,7 @@ edition = "2024"
 authors = [ "Dilshod Tadjibaev (@antimora)",]
 license = "MIT OR Apache-2.0"
 description = "rublas CPU strided/batched floating-point and integer matrix multiplication."
-readme = "../../ruda-core/upstream/burn-flex/README.md"
+readme = false
 build = false
 
 [lib]

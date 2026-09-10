@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::{
         global::{self, PlaneFlowPartitionRule, WriteEventListener},
@@ -23,7 +23,7 @@ use ruda_kernel::tiling::{
     tile::{Tile, TileScope},
 };
 
-#[cube]
+#[ruda]
 /// Defines how the stage is partitioned among compute primitives (e.g., units or planes).
 /// Controls global writeback and and compute indexing.
 pub trait StagePartitioner: Send + Sync + 'static {
@@ -129,7 +129,7 @@ pub struct PartitionedStageMatmul<
     _phantom: PhantomData<(MP, StageLhs, StageRhs, StageAcc, StageOut, SP)>,
 }
 
-#[cube]
+#[ruda]
 impl<MP, StageLhs, StageRhs, StageAcc, StageOut, SP> StageMatmul<MP>
     for PartitionedStageMatmul<MP, StageLhs, StageRhs, StageAcc, StageOut, SP>
 where

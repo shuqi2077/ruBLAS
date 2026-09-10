@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::definition::{AccG, LhsG, MatmulTypes, RhsG};
@@ -11,24 +11,24 @@ use crate::kernel_ir::{
     launch::MatmulArgs,
 };
 
-#[derive(CubeType)]
-/// Area of a tensor a cube is responsible of performing matmul
+#[derive(RudaType)]
+/// Area of a tensor a ruda is responsible of performing matmul
 pub struct PartitionRanges {
     row: PartitionRangeDim,
     col: PartitionRangeDim,
     batch: PartitionRangeDim,
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 pub struct PartitionRangeDim {
     start: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     step: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_steps: u32,
 }
 
-#[cube]
+#[ruda]
 /// Iterates on several global matmul across a global partition
 pub trait GlobalPartitionMatmul: 'static + Send + Sync {
     fn execute<Args: MatmulArgs, MP: MatmulTypes, GMM: global::GlobalMatmul<Args::Config, MP>>(
@@ -39,15 +39,15 @@ pub trait GlobalPartitionMatmul: 'static + Send + Sync {
     );
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Iterates on global matmuls in a row major fashion
 pub struct RowMajorGlobalPartitionMatmul {}
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Iterates on global matmuls in a col major fashion
 pub struct ColMajorGlobalPartitionMatmul {}
 
-#[cube]
+#[ruda]
 impl PartitionRanges {
     /// Create a new [PartitionRanges]
     pub fn new(
@@ -59,23 +59,23 @@ impl PartitionRanges {
     }
 }
 
-#[cube]
+#[ruda]
 impl PartitionRangeDim {
     /// Create a new [PartitionRangeDim]
     pub fn new(
-        cube_pos: u32,
+        ruda_pos: u32,
         #[comptime] stage_dim: u32,
         #[comptime] global_partition_size: u32,
     ) -> PartitionRangeDim {
         PartitionRangeDim {
-            start: cube_pos * global_partition_size * stage_dim,
+            start: ruda_pos * global_partition_size * stage_dim,
             step: stage_dim,
             num_steps: global_partition_size,
         }
     }
 }
 
-#[cube]
+#[ruda]
 impl GlobalPartitionMatmul for RowMajorGlobalPartitionMatmul {
     fn execute<Args: MatmulArgs, MP: MatmulTypes, GMM: global::GlobalMatmul<Args::Config, MP>>(
         state: &mut Args::State<LhsG<MP>, RhsG<MP>, AccG<MP>>,
@@ -109,7 +109,7 @@ impl GlobalPartitionMatmul for RowMajorGlobalPartitionMatmul {
     }
 }
 
-#[cube]
+#[ruda]
 impl GlobalPartitionMatmul for ColMajorGlobalPartitionMatmul {
     fn execute<Args: MatmulArgs, MP: MatmulTypes, GMM: global::GlobalMatmul<Args::Config, MP>>(
         state: &mut Args::State<LhsG<MP>, RhsG<MP>, AccG<MP>>,
@@ -143,7 +143,7 @@ impl GlobalPartitionMatmul for ColMajorGlobalPartitionMatmul {
     }
 }
 
-#[cube]
+#[ruda]
 /// Execute global matmul on lhs, rhs, writing in out.
 /// m and n offsets are absolute rows and columns
 pub(crate) fn execute_global_matmul<

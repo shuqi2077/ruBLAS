@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::barrier::Barrier;
 use ruda_kernel::dsl::prelude::barrier::BarrierToken;
 use ruda_kernel::dsl::prelude::*;
@@ -12,12 +12,12 @@ use crate::kernel_ir::definition::{LhsS, MatmulTypes, RhsS};
 /// Asynchronous barrier for TMA loads
 pub struct AsyncTma {}
 
-#[cube]
+#[ruda]
 impl SyncStrategy for AsyncTma {
     type Barrier = Shared<Barrier>;
 
     fn create_barrier() -> Self::Barrier {
-        let bar = Barrier::shared(CUBE_DIM, UNIT_POS == 0);
+        let bar = Barrier::shared(RUDA_DIM, UNIT_POS == 0);
         sync_async_proxy_shared();
         bar
     }
@@ -38,7 +38,7 @@ impl SyncStrategy for AsyncTma {
     }
 }
 
-#[cube]
+#[ruda]
 /// Barrier for TMA
 pub fn arrive_tma(barrier: &Barrier, #[comptime] num_bytes: u32) -> BarrierToken {
     let expected = select(UNIT_POS == 0, num_bytes, 0);

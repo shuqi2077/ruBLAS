@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::{
@@ -21,7 +21,7 @@ use ruda_kernel::tiling::tile::TileKind;
 
 pub type SyncBarrier<S> = <S as SyncStrategy>::Barrier;
 
-#[cube]
+#[ruda]
 /// A strategy for synchronously loading a full stage memory.
 pub trait FullLoadingStrategy<RC: RuntimeConfig>:
     'static + Send + Sync + Clone + LoadingValidation + LoadMaxRoundPlaneCount
@@ -45,7 +45,7 @@ pub trait FullLoadingStrategy<RC: RuntimeConfig>:
     ) -> Self::Job<EG, NG, ES, NS>;
 }
 
-#[derive(Clone, CubeType)]
+#[derive(Clone, RudaType)]
 /// Loads the entire stage memory.
 ///
 /// A complete load is referred to as a `Job`, which is divided into `Tasks`—
@@ -62,11 +62,11 @@ pub struct FullStageGlobalReader<
     runtime_config: RC,
     stage: FullLoaderStage<RC, L, ES, NS>,
     loading_job: ComptimeOption<L::Job<EG, NG, ES, NS>>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _phantom: PhantomData<L>,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: FullLoadingStrategy<RC>>
     FullStageGlobalReader<EG, NG, ES, NS, RC, L>
 {
@@ -157,7 +157,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: FullLoa
     }
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: FullLoadingStrategy<RC>>
     JobExecutor<L::SyncStrategy> for FullStageGlobalReader<EG, NG, ES, NS, RC, L>
 {
@@ -244,7 +244,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: FullLoa
     }
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// A comptime iterator over a job for sync full stage reader
 pub struct FullStageJobIterator<
     EG: Numeric,
@@ -255,12 +255,12 @@ pub struct FullStageJobIterator<
     L: FullLoadingStrategy<RC>,
 > {
     job: L::Job<EG, NG, ES, NS>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub num_tasks: u32,
     pub current: ComptimeCell<TaskCounter>,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: FullLoadingStrategy<RC>>
     JobIterator for FullStageJobIterator<EG, NG, ES, NS, RC, L>
 {

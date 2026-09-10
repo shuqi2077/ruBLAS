@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 mod matmul_plane_accelerated {
     mod cmma {
         use ruda_test_runtime::TestRuntime;

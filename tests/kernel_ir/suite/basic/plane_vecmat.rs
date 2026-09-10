@@ -3,7 +3,7 @@
 //! The tile matmul used here only supports a ColMajor rhs, which is why these
 //! tests don't use the default row-row `rect` helper.
 
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::ir::AddressType;
 use ruda_kernel::dsl::zspace::shape;
 use rublas::kernel_ir::{

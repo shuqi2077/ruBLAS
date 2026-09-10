@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use ruda_kernel::dsl::prelude::*;
@@ -11,7 +11,7 @@ use ruda_kernel::tiling::{
 
 use super::StridedStageMemory;
 
-#[cube]
+#[ruda]
 /// Determines the order in which tiles are stored in shared memory,
 /// if [TilingLayout] is contiguous
 pub trait TilingOrder: 'static + Send + Sync + Clone + Copy {
@@ -68,7 +68,7 @@ pub struct TilingLayoutConfig {
     pub out: TilingLayoutEnum,
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Tiles laid out in row-major order.
 ///
 /// Each tile is contiguous, and tiles are placed side by side,
@@ -88,7 +88,7 @@ pub struct TilingLayoutConfig {
 /// ```
 pub struct RowMajorTilingOrder {}
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Tiles laid out in column-major order.
 ///
 /// Each tile is contiguous, and tiles are placed top to bottom,
@@ -109,7 +109,7 @@ pub struct RowMajorTilingOrder {}
 /// ```
 pub struct ColMajorTilingOrder {}
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Tiles are laid out in column-major order across a fixed number of rows,
 /// with all tiles from those rows placed contiguously side by side.
 ///
@@ -136,7 +136,7 @@ pub struct ColMajorTilingOrder {}
 /// ```
 pub struct OrderedTilingOrder {}
 
-#[cube]
+#[ruda]
 impl TilingOrder for RowMajorTilingOrder {
     fn to_row_col(
         nth: u32,
@@ -161,7 +161,7 @@ impl TilingOrder for RowMajorTilingOrder {
     }
 }
 
-#[cube]
+#[ruda]
 impl TilingOrder for ColMajorTilingOrder {
     fn to_row_col(
         nth: u32,
@@ -186,7 +186,7 @@ impl TilingOrder for ColMajorTilingOrder {
     }
 }
 
-#[cube]
+#[ruda]
 impl TilingOrder for OrderedTilingOrder {
     fn to_row_col(
         nth: u32,
@@ -230,13 +230,13 @@ impl TilingOrder for OrderedTilingOrder {
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// A special tiling order where:
 /// - If the matrix data layout is row-major, the tiling order is col-major
 /// - If the matrix data layout is col-major, the tiling order is row-major
 pub struct TmaTilingOrder;
 
-#[cube]
+#[ruda]
 impl TilingOrder for TmaTilingOrder {
     fn to_row_col(
         nth: u32,
@@ -275,7 +275,7 @@ impl TilingOrder for TmaTilingOrder {
     }
 }
 
-#[cube]
+#[ruda]
 /// Describes how tiles are arranged in shared memory.
 pub trait TilingLayout: 'static + Send + Sync + Clone + Copy + TilingValidation {
     /// Returns the tile at shared memory coordinates
@@ -309,7 +309,7 @@ pub struct TmaTilingLayout {}
 /// Not all tiles are contiguous in shared memory, but mapping is more direct.
 pub struct StridedTilingLayout {}
 
-#[cube]
+#[ruda]
 impl<T: TilingOrder> ContiguousTilingLayout<T> {
     /// Converts a tile index in the stage to its (x,y) position
     pub fn to_x_y(nth: u32, #[comptime] config: StageMemoryConfig) -> Coords2d {
@@ -320,7 +320,7 @@ impl<T: TilingOrder> ContiguousTilingLayout<T> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder> TilingLayout for ContiguousTilingLayout<TO> {
     fn get_tile<ES: Numeric, NS: Size>(
         stage_memory: &StridedStageMemory<ES, NS, Self>,
@@ -359,7 +359,7 @@ impl<TO: TilingOrder> TilingValidation for ContiguousTilingLayout<TO> {
     }
 }
 
-#[cube]
+#[ruda]
 impl StridedTilingLayout {
     /// Returns the nth slice of the stage
     pub fn nth_slice<ES: Numeric, NS: Size>(
@@ -381,7 +381,7 @@ impl StridedTilingLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl TilingLayout for StridedTilingLayout {
     fn get_tile<ES: Numeric, NS: Size>(
         stage: &StridedStageMemory<ES, NS, Self>,
@@ -452,7 +452,7 @@ impl TilingValidation for StridedTilingLayout {
     }
 }
 
-#[cube]
+#[ruda]
 impl TilingLayout for TmaTilingLayout {
     fn get_tile<ES: Numeric, NS: Size>(
         stage: &StridedStageMemory<ES, NS, Self>,
@@ -489,7 +489,7 @@ impl TilingValidation for TmaTilingLayout {
 /// `FillReader`
 pub struct NoTilingLayout {}
 
-#[cube]
+#[ruda]
 impl TilingLayout for NoTilingLayout {
     fn get_tile<ES: Numeric, NS: Size>(
         _stage: &StridedStageMemory<ES, NS, Self>,

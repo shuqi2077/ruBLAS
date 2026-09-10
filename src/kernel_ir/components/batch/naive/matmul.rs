@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::{
@@ -15,11 +15,11 @@ use crate::kernel_ir::{
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
-use ruda_kernel::dsl::cube;
+use ruda_kernel::dsl::ruda;
 use ruda_kernel::dsl::num_traits::Zero;
 use ruda_kernel::tiling::MatrixLayout;
 
-#[cube(launch_unchecked, explicit_define, address_type = "dynamic")]
+#[ruda(launch_unchecked, explicit_define, address_type = "dynamic")]
 #[allow(clippy::type_complexity)]
 /// Launches the matmul kernel
 pub(crate) fn matmul_entry<
@@ -38,7 +38,7 @@ pub(crate) fn matmul_entry<
     >,
     output: &mut <Args as MatmulArgs>::Output<Vector<Acc, AccSize>>,
     runtime_config: (),
-    cube_mapping: CubeMapping,
+    ruda_mapping: RudaMapping,
     #[comptime] blueprint: NaiveBlueprint,
     #[comptime] _source: String,
     #[define(Lhs, Rhs, Acc)] _global: [StorageType; 3],
@@ -95,20 +95,20 @@ pub(crate) fn matmul_entry<
         (Lhs, LhsSize, Lhs, LhsSize, RegisterLhs, LhsSize),
         (Rhs, RhsSize, Rhs, RhsSize, RegisterRhs, RhsSize),
         (Acc, AccSize, Acc, AccSize, RegisterAcc, AccSize),
-    )>::execute::<Args>(&mut state, cube_mapping, config);
+    )>::execute::<Args>(&mut state, ruda_mapping, config);
 }
 
 pub struct NaiveMatmul<MP: MatmulTypes> {
     _phantom: PhantomData<MP>,
 }
 
-#[cube]
+#[ruda]
 impl<MT: MatmulTypes> BatchMatmul<(), MT> for NaiveMatmul<MT> {
     type Config = NaiveMatmulConfig;
 
     fn execute<Args: MatmulArgs>(
         state: &mut Args::State<LhsG<MT>, RhsG<MT>, AccG<MT>>,
-        _cube_mapping: CubeMapping,
+        _ruda_mapping: RudaMapping,
         #[comptime] config: Self::Config,
     ) {
         let lhs = Args::view_lhs(state);
@@ -175,7 +175,7 @@ impl<MT: MatmulTypes> BatchMatmul<(), MT> for NaiveMatmul<MT> {
     }
 }
 
-#[cube]
+#[ruda]
 fn load_unrolled<I: Numeric, N: Size, N2: Size>(
     view: &View<Vector<I, N>, Coords2d>,
     pos: Coords2d,

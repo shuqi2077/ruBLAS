@@ -1,4 +1,4 @@
-//! Forced-blueprint tests for non-default hypercube / specialization /
+//! Forced-blueprint tests for non-default hyperruda / specialization /
 //! partition-buffering knobs. All of these are applied to one representative
 //! routine (SimpleCyclicCmma or DoubleCyclicCmma as appropriate) — the point
 //! is to exercise each knob at least once, not to cover every combo.
@@ -17,12 +17,12 @@ use rublas::kernel_ir::{
 };
 use ruda_kernel::tiling::{
     PartitionSize, StageSize, SwizzleModes,
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation},
     stage::SwizzleMode,
 };
 
 use super::common::{
-    client, default_hypercube, default_tile_size, f16_elems, plane_blueprint_with, problem, row_row,
+    client, default_hyperruda, default_tile_size, f16_elems, plane_blueprint_with, problem, row_row,
 };
 use crate::suite::test_matmul_strategy;
 
@@ -30,7 +30,7 @@ fn run_with(
     partition: PartitionSize,
     stage: StageSize,
     swizzle: SwizzleModes,
-    hypercube: HypercubeBlueprint,
+    hyperruda: HyperrudaBlueprint,
     buffering: PartitionBuffering,
     specialization: LoadFlows,
     strategy: impl FnOnce(rublas::kernel_ir::definition::TilingBlueprint) -> Strategy,
@@ -44,7 +44,7 @@ fn run_with(
         partition,
         stage,
         swizzle,
-        hypercube,
+        hyperruda,
         buffering,
         specialization,
     );
@@ -66,7 +66,7 @@ fn both_main() -> LoadFlows {
     }
 }
 
-/// Default partition/stage for single-partition knob tests (hypercube).
+/// Default partition/stage for single-partition knob tests (hyperruda).
 fn simple_partition() -> PartitionSize {
     PartitionSize { m: 1, n: 1, k: 1 }
 }
@@ -86,17 +86,17 @@ fn specialized_stage() -> StageSize {
     StageSize { m: 4, n: 1, k: 1 }
 }
 
-// -- Hypercube global order --------------------------------------------------
+// -- Hyperruda global order --------------------------------------------------
 
 #[test]
-fn hypercube_swizzle_col() {
+fn hyperruda_swizzle_col() {
     run_with(
         simple_partition(),
         simple_stage(),
         default_swizzle(),
-        HypercubeBlueprint::builder()
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleCol(2))
-            .cube_count_strategy(CubeCountStrategy::FromProblem)
+            .ruda_count_strategy(RudaCountStrategy::FromProblem)
             .build(),
         PartitionBuffering::Single,
         both_main(),
@@ -105,14 +105,14 @@ fn hypercube_swizzle_col() {
 }
 
 #[test]
-fn hypercube_col_flattened() {
+fn hyperruda_col_flattened() {
     run_with(
         simple_partition(),
         simple_stage(),
         default_swizzle(),
-        HypercubeBlueprint::builder()
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::ColMajor)
-            .cube_count_strategy(CubeCountStrategy::Flattened)
+            .ruda_count_strategy(RudaCountStrategy::Flattened)
             .build(),
         PartitionBuffering::Single,
         both_main(),
@@ -121,17 +121,17 @@ fn hypercube_col_flattened() {
 }
 
 #[test]
-fn hypercube_sm_exact() {
+fn hyperruda_sm_exact() {
     run_with(
         simple_partition(),
         simple_stage(),
         default_swizzle(),
-        HypercubeBlueprint::builder()
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::RowMajor)
-            .cube_count_strategy(CubeCountStrategy::Sm {
+            .ruda_count_strategy(RudaCountStrategy::Sm {
                 num_sms: 4,
                 sm_usage: SmAllocation::Exact,
-                cubes_first: false,
+                rudas_first: false,
             })
             .build(),
         PartitionBuffering::Single,
@@ -141,14 +141,14 @@ fn hypercube_sm_exact() {
 }
 
 #[test]
-fn hypercube_spread() {
+fn hyperruda_spread() {
     run_with(
         simple_partition(),
         simple_stage(),
         default_swizzle(),
-        HypercubeBlueprint::builder()
+        HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(2))
-            .cube_count_strategy(CubeCountStrategy::Spread)
+            .ruda_count_strategy(RudaCountStrategy::Spread)
             .build(),
         PartitionBuffering::Single,
         both_main(),
@@ -169,7 +169,7 @@ fn specialization_main_load() {
         specialized_partition(),
         specialized_stage(),
         default_swizzle(),
-        default_hypercube(),
+        default_hyperruda(),
         PartitionBuffering::Single,
         LoadFlows {
             lhs: InputLoadFlow::MainOnly,
@@ -185,7 +185,7 @@ fn specialization_load_main() {
         specialized_partition(),
         specialized_stage(),
         default_swizzle(),
-        default_hypercube(),
+        default_hyperruda(),
         PartitionBuffering::Single,
         LoadFlows {
             lhs: InputLoadFlow::LoadOnly,
@@ -201,7 +201,7 @@ fn specialization_load_load() {
         specialized_partition(),
         specialized_stage(),
         default_swizzle(),
-        default_hypercube(),
+        default_hyperruda(),
         PartitionBuffering::Single,
         LoadFlows {
             lhs: InputLoadFlow::LoadOnly,
@@ -222,7 +222,7 @@ fn partition_buffering_double() {
         PartitionSize { m: 1, n: 2, k: 1 },
         simple_stage(),
         default_swizzle(),
-        default_hypercube(),
+        default_hyperruda(),
         PartitionBuffering::Double,
         both_main(),
         |bp| Strategy::DoubleCyclicCmma(BlueprintStrategy::Forced(bp)),

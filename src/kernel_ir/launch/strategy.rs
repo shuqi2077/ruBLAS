@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
 use ruda_kernel::dsl::Runtime;

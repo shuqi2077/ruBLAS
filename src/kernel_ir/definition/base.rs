@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::cmp::max;
 
 use crate::kernel_ir::{
@@ -269,7 +269,7 @@ pub enum MatmulIdent {
 }
 
 impl MatmulIdent {
-    /// Equivalent to into, but type inference works better within Cube functions
+    /// Equivalent to into, but type inference works better within Ruda functions
     pub fn into_stage(self) -> StageIdent {
         self.into()
     }

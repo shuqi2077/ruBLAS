@@ -1,6 +1,6 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 mod f16_ty {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     use rublas::kernel_ir::definition::{MatmulElems, MatmulGlobalElems};
 
     fn elems() -> MatmulGlobalElems {
@@ -11,7 +11,7 @@ mod f16_ty {
 }
 
 mod f32_ty {
-    use ruda_kernel::dsl::frontend::CubePrimitive;
+    use ruda_kernel::dsl::frontend::RudaPrimitive;
     use rublas::kernel_ir::definition::{MatmulElems, MatmulGlobalElems};
 
     fn elems() -> MatmulGlobalElems {

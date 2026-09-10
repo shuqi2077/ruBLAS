@@ -1,19 +1,19 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
-use ruda_kernel::dsl::CubeType;
+use ruda_kernel::dsl::RudaType;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::{components::stage::FilledStage, definition::MatrixTypes};
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Accumulator reader that zeros the accumulator
 pub struct ZeroGlobalReader<IP: MatrixTypes> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _ty: PhantomData<IP>,
 }
 
-#[cube]
+#[ruda]
 impl<IP: MatrixTypes> ZeroGlobalReader<IP> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {

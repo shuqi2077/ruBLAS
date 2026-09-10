@@ -2,7 +2,7 @@ mod kernel;
 
 use ruda_core::device::Device;
 use ruda_core::tensor::{DType, Shape};
-use ruda_kernel::dsl::{Runtime, calculate_cube_count_elemwise, prelude::CubeDim};
+use ruda_kernel::dsl::{Runtime, calculate_ruda_count_elemwise, prelude::RudaDim};
 use ruda_kernel::tensor::{
     RudaTensor, allocation::empty_device_contiguous_dtype, contiguous::into_contiguous,
 };
@@ -167,11 +167,11 @@ impl<R: Runtime> AwqGemm<R> {
             return Ok(output);
         }
         let input = into_contiguous(input);
-        let cube_dim = CubeDim::new(input.client.properties(), elements);
+        let ruda_dim = RudaDim::new(input.client.properties(), elements);
         kernel::awq_gemm::launch::<R>(
             &input.client,
-            calculate_cube_count_elemwise(&input.client, elements, cube_dim),
-            cube_dim,
+            calculate_ruda_count_elemwise(&input.client, elements, ruda_dim),
+            ruda_dim,
             input.clone().into_array_arg(),
             self.qweight.clone().into_array_arg(),
             self.qzeros.clone().into_array_arg(),

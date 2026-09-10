@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::stage::matmul::scheduler::PartitionScheduler;
@@ -14,18 +14,18 @@ use ruda_kernel::tiling::{
     },
 };
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Wrapper over a sequence of Tile Matmul accumulators
 /// Enables indexing at 2d coordinates
 pub struct Accumulators<MP: MatmulTypes, Sc: TileScope> {
     sequence: Sequence<Tile<<MP::Acc as MatrixTypes>::Register, Sc, ReadWrite>>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _phantom: PhantomData<Sc>,
 }
 
 type StageTy<T> = crate::kernel_ir::definition::Stage<T>;
 
-#[cube]
+#[ruda]
 impl<MT: MatmulTypes, Sc: TileScope> Accumulators<MT, Sc> {
     /// Create a new accumulators sequence from the provided configuration
     pub fn new(
@@ -93,14 +93,14 @@ impl<MT: MatmulTypes, Sc: TileScope> Accumulators<MT, Sc> {
     }
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Rhs tiles, can be doubled for partition double buffering
-pub enum RhsTile<Rhs: CubeType> {
+pub enum RhsTile<Rhs: RudaType> {
     Single(Rhs),
     Double((Rhs, Rhs)),
 }
 
-#[cube]
+#[ruda]
 fn allocate_acc<MT: MatmulTypes, Sc: TileScope>(
     #[comptime] layout: MatrixLayout,
     #[comptime] config: TileMatmul,

@@ -1,9 +1,9 @@
 //! Extended tier: hand-written forced-blueprint tests covering harder or
 //! niche cases — per-routine TilingScheme sweep, alt shapes, non-default
-//! layouts, hypercube / swizzle / specialization / partition-buffering knobs,
+//! layouts, hyperruda / swizzle / specialization / partition-buffering knobs,
 //! and quantization.
 
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_test_runtime::TestRuntime;
 use ruda_kernel::dsl::client::ComputeClient;
 use rublas::kernel_ir::{definition::MatmulProblem, launch::test_only::TestStrategy};

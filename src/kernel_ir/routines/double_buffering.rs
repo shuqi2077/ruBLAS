@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
 use ruda_kernel::dsl::Runtime;
@@ -146,7 +146,7 @@ macro_rules! double_buffering_impl {
                     &device_settings.vector_sizes,
                 )?;
 
-                let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+                let rudadim_resource = Self::BatchMatmul::rudadim_resource(
                     &blueprint,
                     &dtypes,
                     &device_settings.vector_sizes,
@@ -156,7 +156,7 @@ macro_rules! double_buffering_impl {
                     blueprint,
                     dtypes,
                     problem,
-                    cubedim_resource,
+                    rudadim_resource,
                     device_settings,
                 )
             }

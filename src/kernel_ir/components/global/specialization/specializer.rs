@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::{
@@ -18,14 +18,14 @@ pub enum SpecializerKind {
     NotSpecialized,
 }
 
-#[derive(CubeType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
-/// Specialization information in cube functions
+#[derive(RudaType, Copy, Clone, Debug, Hash, PartialEq, Eq)]
+/// Specialization information in ruda functions
 pub struct Specializer {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub kind: SpecializerKind,
 }
 
-#[cube]
+#[ruda]
 impl Specializer {
     pub fn new(
         #[comptime] plane_flow_config: PlaneFlowConfig,

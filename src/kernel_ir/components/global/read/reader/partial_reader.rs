@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use super::{StageBuffer, TaskCounter};
@@ -21,7 +21,7 @@ use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
 use ruda_kernel::tiling::tile::TileKind;
 
-#[cube]
+#[ruda]
 /// A strategy for loading partial stage memory
 pub trait PartialLoadingStrategy<RC: RuntimeConfig>:
     'static + Send + Sync + Clone + LoadingValidation + LoadMaxRoundPlaneCount
@@ -43,7 +43,7 @@ pub trait PartialLoadingStrategy<RC: RuntimeConfig>:
     ) -> Self::Job<EG, NG, ES, NS>;
 }
 
-#[cube]
+#[ruda]
 /// A strategy for loading partial stage memory with async barriers. Used for specialized.
 pub trait AsyncPartialLoadingStrategy<RC: RuntimeConfig>:
     PartialLoadingStrategy<RC, SyncStrategy: SyncStrategy<Barrier = Shared<Barrier>>>
@@ -61,7 +61,7 @@ pub trait AsyncPartialLoadingStrategy<RC: RuntimeConfig>:
     fn is_elected<S: StageConfig>(#[comptime] config: SharedGlobalMatmulConfig<S>) -> bool;
 }
 
-#[derive(Clone, CubeType)]
+#[derive(Clone, RudaType)]
 #[allow(clippy::type_complexity)]
 /// Loads a stage from stage memory using synchronous data movement operations.
 ///
@@ -81,7 +81,7 @@ pub struct PartialStageGlobalReader<
     loading_job: ComptimeOption<(L::Job<EG, NG, ES, NS>, L::Job<EG, NG, ES, NS>)>,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: PartialLoadingStrategy<RC>>
     PartialStageGlobalReader<EG, NG, ES, NS, RC, L>
 {
@@ -167,7 +167,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: Partial
     }
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: PartialLoadingStrategy<RC>>
     JobExecutor<L::SyncStrategy> for PartialStageGlobalReader<EG, NG, ES, NS, RC, L>
 {
@@ -263,7 +263,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: Partial
     }
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Accomplish the entire job of filling the stage
 pub struct PartialJobIterator<
     EG: Numeric,
@@ -274,14 +274,14 @@ pub struct PartialJobIterator<
     L: PartialLoadingStrategy<RC>,
 > {
     job: L::Job<EG, NG, ES, NS>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub num_tasks: u32,
     pub current: ComptimeCell<TaskCounter>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _rc: PhantomData<RC>,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, RC: RuntimeConfig, L: PartialLoadingStrategy<RC>>
     JobIterator for PartialJobIterator<EG, NG, ES, NS, RC, L>
 {

@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::{fmt::Display, marker::PhantomData};
 
 use ruda_kernel::dsl::Runtime;
@@ -6,7 +6,7 @@ use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::dsl::ir::features::MmaConfig;
 use ruda_kernel::tiling::{
     MatrixLayout,
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation},
 };
 
 use crate::kernel_ir::components::{
@@ -154,7 +154,7 @@ where
             &device_settings.vector_sizes,
         )?;
 
-        let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+        let rudadim_resource = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
@@ -164,7 +164,7 @@ where
             blueprint,
             dtypes,
             problem,
-            cubedim_resource,
+            rudadim_resource,
             device_settings,
         )
     }
@@ -195,13 +195,13 @@ fn infer_blueprint_specialized<R: Runtime>(
             },
         )
     };
-    let cube_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
-        Some(num_sms) => CubeCountStrategy::Sm {
+    let ruda_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
+        Some(num_sms) => RudaCountStrategy::Sm {
             num_sms,
             sm_usage: SmAllocation::Exact,
-            cubes_first: true,
+            rudas_first: true,
         },
-        None => CubeCountStrategy::Flattened,
+        None => RudaCountStrategy::Flattened,
     };
 
     let tiling_scheme = if supported(16, 8, 16) {
@@ -235,14 +235,14 @@ fn infer_blueprint_specialized<R: Runtime>(
         );
     };
 
-    let hypercube = HypercubeBlueprint::builder()
+    let hyperruda = HyperrudaBlueprint::builder()
         .global_order(GlobalOrder::SwizzleRow(4))
-        .cube_count_strategy(cube_count_strategy)
+        .ruda_count_strategy(ruda_count_strategy)
         .build();
 
     let mut builder = TilingBlueprint::builder(tile_matmul, tiling_scheme, plane_dim, problem)
         .partition_buffering(PartitionBuffering::Single)
-        .hypercube_blueprint(hypercube)
+        .hyperruda_blueprint(hyperruda)
         .load_specialization_config(LoadFlows {
             lhs: InputLoadFlow::LoadOnly,
             rhs: InputLoadFlow::LoadOnly,

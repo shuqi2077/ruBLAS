@@ -18,8 +18,8 @@ pub enum MatmulStrategy {
     #[cfg(feature = "tensor-matmul-autotune")]
     /// Using autotune to choose the best kernel based on runtime information.
     Autotune,
-    /// Cube implementation of matmul.
-    Cube,
+    /// Ruda implementation of matmul.
+    Ruda,
     /// Tensor Core path with the partial K32 tile first; no materialized padding.
     CmmaResidueFirst,
     /// One output element per unit, used by runtimes without plane arithmetic.
@@ -33,7 +33,7 @@ impl Default for MatmulStrategy {
         return MatmulStrategy::Autotune;
 
         #[cfg(not(feature = "tensor-matmul-autotune"))]
-        MatmulStrategy::Cube
+        MatmulStrategy::Ruda
     }
 }
 
@@ -68,7 +68,7 @@ pub fn matmul_with_precision<R: Runtime>(
             launch_matmul(&Strategy::SimpleCyclicCmmaResidueFirst, lhs, rhs, out.clone())?;
             Ok(out)
         }
-        MatmulStrategy::Cube => {
+        MatmulStrategy::Ruda => {
             let out = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
             launch_matmul_with_precision(&Default::default(), lhs, rhs, out.clone(), f32_math)?;
             Ok(out)

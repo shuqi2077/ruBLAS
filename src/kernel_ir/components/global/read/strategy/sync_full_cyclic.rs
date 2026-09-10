@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::{
@@ -17,11 +17,11 @@ use ruda_kernel::tiling::{InvalidConfigError, tile::Strided};
 
 use super::{LoadingJob, LoadingValidation, ReaderMode};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using all planes.
 /// Unit with pos X loads vectors with indices X, X + NUM_UNITS, X + 2 * NUM_UNITS, ...
 pub struct SyncFullCyclicLoading<T: TilingOrder> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _t: PhantomData<T>,
 }
 
@@ -73,7 +73,7 @@ impl<TO: TilingOrder> LoadMaxRoundPlaneCount for SyncFullCyclicLoading<TO> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for SyncFullCyclicLoading<TO> {
     type TilingLayout = ContiguousTilingLayout<TO>;
     type SyncStrategy = Synchronous;
@@ -113,25 +113,25 @@ impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for SyncFullCyc
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct SyncFullCyclicJob {
     unit_position_base: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     tile_num_elements: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     jump_length: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     balanced_workload: bool,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_stage_elements: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     reader_mode: ReaderMode,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     LoadingJob<EG, NG, ES, NS, ContiguousTilingLayout<TO>, Synchronous> for SyncFullCyclicJob
 {
@@ -174,7 +174,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     }
 }
 
-#[cube]
+#[ruda]
 pub(crate) fn load_and_store_vector<
     EG: Numeric,
     NG: Size,

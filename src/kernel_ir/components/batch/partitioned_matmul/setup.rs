@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::{
@@ -11,13 +11,13 @@ use crate::kernel_ir::{
     components::global::GlobalMatmulFamily,
 };
 use crate::kernel_ir::{
-    definition::CubeMappingLaunch,
+    definition::RudaMappingLaunch,
     definition::MatmulProblem,
     definition::MatmulVectorSizes,
     definition::TilingBlueprint,
     definition::{MatmulElems, MatmulSetupError, MatmulTypes},
     launch::*,
-    {components::CubeDimResource, launch::RuntimeConfig},
+    {components::RudaDimResource, launch::RuntimeConfig},
     {components::batch::BatchMatmulFamily, launch::ConfigRuntimeArg},
 };
 use ruda_kernel::dsl::ir::DeviceProperties;
@@ -61,13 +61,13 @@ impl<RC: RuntimeConfig, GMM: GlobalMatmulFamily<RC>, S: GlobalPartitionMatmul> B
 
     unsafe fn launch_unchecked<MA: MatmulArgs<Config = RC>, R: Runtime>(
         client: &ComputeClient<R>,
-        cube_dim: CubeDim,
-        cube_count: CubeCount,
+        ruda_dim: RudaDim,
+        ruda_count: RudaCount,
         address_type: AddressType,
         input: InputRuntimeArg<MA, R>,
         output: OutputRuntimeArg<MA, R>,
         config: ConfigRuntimeArg<MA, R>,
-        cube_count_input: CubeMappingLaunch<R>,
+        ruda_count_input: RudaMappingLaunch<R>,
         blueprint: Self::Blueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
@@ -75,13 +75,13 @@ impl<RC: RuntimeConfig, GMM: GlobalMatmulFamily<RC>, S: GlobalPartitionMatmul> B
         unsafe {
             matmul_entry::launch_unchecked::<MA, Lhs, LhsSize, Rhs, RhsSize, Acc, AccSize, GMM, S, R>(
                 client,
-                cube_count,
-                cube_dim,
+                ruda_count,
+                ruda_dim,
                 address_type,
                 input,
                 output,
                 config,
-                cube_count_input,
+                ruda_count_input,
                 blueprint,
                 dtypes.clone(),
                 concat!(
@@ -97,12 +97,12 @@ impl<RC: RuntimeConfig, GMM: GlobalMatmulFamily<RC>, S: GlobalPartitionMatmul> B
         Ok(())
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &Self::Blueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError> {
-        GMM::cubedim_resource(blueprint, dtypes, vector_sizes)
+    ) -> Result<RudaDimResource, MatmulSetupError> {
+        GMM::rudadim_resource(blueprint, dtypes, vector_sizes)
     }
 
     fn validate_blueprint<R: Runtime>(

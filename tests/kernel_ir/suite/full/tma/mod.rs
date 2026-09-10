@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 mod matmul_tma {
     mod cmma {
         use ruda_test_runtime::TestRuntime;

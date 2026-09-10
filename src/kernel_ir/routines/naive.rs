@@ -1,7 +1,7 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
-use ruda_kernel::tiling::cube_count::CubeCountPlan;
+use ruda_kernel::tiling::ruda_count::RudaCountPlan;
 
 use crate::kernel_ir::{
     components::batch::{
@@ -63,23 +63,23 @@ impl Routine<()> for NaiveRoutine {
             &device_settings.vector_sizes,
         )?;
 
-        let cube_dim = Self::BatchMatmul::cubedim_resource(
+        let ruda_dim = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
         )?
-        .to_cube_dim(device_settings.plane_dim)?;
+        .to_ruda_dim(device_settings.plane_dim)?;
 
         Ok(LaunchInfo {
             blueprint,
             dtypes,
-            cube_dim,
-            cube_count_plan: simple_cube_count(
+            ruda_dim,
+            ruda_count_plan: simple_ruda_count(
                 &problem.lhs_shape,
                 &problem.rhs_shape,
                 &problem.out_shape,
-                cube_dim.x,
-                cube_dim.y,
+                ruda_dim.x,
+                ruda_dim.y,
             )?,
             address_type: problem.address_type,
             vector_sizes: device_settings.vector_sizes,
@@ -88,34 +88,34 @@ impl Routine<()> for NaiveRoutine {
 }
 
 #[allow(clippy::result_large_err)]
-fn simple_cube_count(
+fn simple_ruda_count(
     lhs_shape: &[usize],
     rhs_shape: &[usize],
     output_shape: &[usize],
-    cube_dim_x: u32,
-    cube_dim_y: u32,
-) -> Result<CubeCountPlan, MatmulSetupError> {
+    ruda_dim_x: u32,
+    ruda_dim_y: u32,
+) -> Result<RudaCountPlan, MatmulSetupError> {
     let ndims = lhs_shape.len();
     let m = lhs_shape[ndims - 2];
     let n = rhs_shape[ndims - 1];
 
-    let m_cubes = f32::ceil(m as f32 / cube_dim_x as f32) as u32;
-    let n_cubes = f32::ceil(n as f32 / cube_dim_y as f32) as u32;
-    let mut batch_cubes = 1u32;
+    let m_rudas = f32::ceil(m as f32 / ruda_dim_x as f32) as u32;
+    let n_rudas = f32::ceil(n as f32 / ruda_dim_y as f32) as u32;
+    let mut batch_rudas = 1u32;
 
     #[allow(clippy::needless_range_loop)]
     for i in 0..ndims - 2 {
-        batch_cubes *= output_shape[i] as u32;
+        batch_rudas *= output_shape[i] as u32;
     }
 
-    let cube_count_plan = CubeCountPlan::new_from_problem((m_cubes, n_cubes, batch_cubes).into());
-    let max_cube_count = u16::MAX as u32;
+    let ruda_count_plan = RudaCountPlan::new_from_problem((m_rudas, n_rudas, batch_rudas).into());
+    let max_ruda_count = u16::MAX as u32;
 
-    if m_cubes > max_cube_count || n_cubes > max_cube_count || batch_cubes > max_cube_count {
+    if m_rudas > max_ruda_count || n_rudas > max_ruda_count || batch_rudas > max_ruda_count {
         return Err(MatmulSetupError::Unavailable(
-            MatmulAvailabilityError::CubeCountTooBig(cube_count_plan.resolve()),
+            MatmulAvailabilityError::RudaCountTooBig(ruda_count_plan.resolve()),
         ));
     }
 
-    Ok(cube_count_plan)
+    Ok(ruda_count_plan)
 }

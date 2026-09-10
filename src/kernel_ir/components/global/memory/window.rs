@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
@@ -15,7 +15,7 @@ use crate::kernel_ir::components::global::memory::GlobalMemoryConfig;
 ///
 /// If the slice would be partly out-of-bounds, it will simply be shorter.
 /// The caller must do the padding if necessary.
-#[cube]
+#[ruda]
 pub fn load_window_in_tile<EG: Numeric>(
     view: &View<EG, Coords2d>,
     tile: Coords2d,
@@ -51,8 +51,8 @@ pub fn load_window_in_tile<EG: Numeric>(
 ///
 /// If the slice would be partly out-of-bounds, it will simply be shorter.
 /// The caller must do the padding if necessary.
-#[cube]
-pub fn load_window_in_stage<EG: CubePrimitive>(
+#[ruda]
+pub fn load_window_in_stage<EG: RudaPrimitive>(
     view: &View<EG, Coords2d>,
     nth_window: u32,
     #[comptime] smem_config: StageMemoryConfig,
@@ -66,8 +66,8 @@ pub fn load_window_in_stage<EG: CubePrimitive>(
     load_window(view, nth_window, size, gmem_config)
 }
 
-#[cube]
-fn load_window<EG: CubePrimitive>(
+#[ruda]
+fn load_window<EG: RudaPrimitive>(
     view: &View<EG, Coords2d>,
     nth_window: u32,
     size: Coords2d,

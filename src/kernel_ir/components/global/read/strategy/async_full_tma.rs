@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::global::read::{FullLoadingStrategy, validate_tma_with_problem},
     components::global::read::{validate_async_barrier, validate_tma},
@@ -21,7 +21,7 @@ use ruda_kernel::tiling::{
 
 use super::{LoadingJob, LoadingValidation};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using TMA load instructions.
 /// Uses special tiling to minimize the number of loads required. Issues one load for each
 /// tile in the major dimension (i.e. `k` for col-major RHS).
@@ -62,7 +62,7 @@ impl LoadMaxRoundPlaneCount for AsyncFullTmaLoading {
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullTmaLoading {
     type TilingLayout = TmaTilingLayout;
     type SyncStrategy = AsyncTma;
@@ -96,15 +96,15 @@ impl<RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullTmaLoading {
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncFullTmaJob {
     is_elected: bool,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     LoadingJob<EG, NG, ES, NS, TmaTilingLayout, AsyncTma> for AsyncFullTmaJob
 {

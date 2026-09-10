@@ -1,18 +1,18 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::CubeDim;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::RudaDim;
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::dsl::flex32;
-use ruda_kernel::dsl::prelude::CubePrimitive;
+use ruda_kernel::dsl::prelude::RudaPrimitive;
 use ruda_kernel::dsl::tf32;
 use ruda_kernel::tiling::{
     MatrixLayout, SwizzleModes,
-    cube_count::{Count3d, CubeCountPlan, HypercubeBlueprint},
+    ruda_count::{Count3d, RudaCountPlan, HyperrudaBlueprint},
 };
 
 use crate::kernel_ir::{
     components::{
-        CubeDimResource,
+        RudaDimResource,
         global::{LoadFlows, memory::GlobalLayoutConfig, read::ReaderMode},
         stage::PartitionBuffering,
         tile::TileMatmulKind,
@@ -44,7 +44,7 @@ pub struct TilingBlueprint {
     pub loading_precompute_strategy: LoadingPrecomputeStrategy,
     pub reader_mode: ReaderMode,
     pub load_flows: LoadFlows,
-    pub hypercube_blueprint: HypercubeBlueprint,
+    pub hyperruda_blueprint: HyperrudaBlueprint,
     pub lhs_layout: MatrixLayout,
     pub rhs_layout: MatrixLayout,
     pub check_m_bounds: bool,
@@ -127,7 +127,7 @@ impl TilingBlueprint {
         plane_dim: u32,
         problem: &MatmulProblem,
     ) -> TilingBlueprintBuilder {
-        let hypercube_blueprint = HypercubeBlueprint::builder().build();
+        let hyperruda_blueprint = HyperrudaBlueprint::builder().build();
 
         let check_m_bounds =
             !(problem.m as u32).is_multiple_of(tiling_scheme.elements_per_stage_along_m());
@@ -140,7 +140,7 @@ impl TilingBlueprint {
             plane_dim,
             tile_matmul,
             tiling_scheme,
-            hypercube_blueprint,
+            hyperruda_blueprint,
             check_m_bounds,
             check_n_bounds,
             check_k_bounds,
@@ -154,16 +154,16 @@ impl TilingBlueprint {
         }
     }
 
-    pub fn cube_launch_info<R: Runtime>(
+    pub fn ruda_launch_info<R: Runtime>(
         &self,
-        cubedim_resource: CubeDimResource,
+        rudadim_resource: RudaDimResource,
         problem: &MatmulProblem,
         device_settings: &DeviceSettings<R>,
-    ) -> Result<(CubeDim, CubeCountPlan), MatmulSetupError> {
+    ) -> Result<(RudaDim, RudaCountPlan), MatmulSetupError> {
         let plane_dim = device_settings.plane_dim;
-        let cube_dim = cubedim_resource.to_cube_dim(plane_dim)?;
+        let ruda_dim = rudadim_resource.to_ruda_dim(plane_dim)?;
 
-        let target_cube_count = Count3d {
+        let target_ruda_count = Count3d {
             x: (problem.m as u32)
                 .div_ceil(self.tiling_scheme.elements_per_global_partition_along_m()),
             y: (problem.n as u32)
@@ -171,13 +171,13 @@ impl TilingBlueprint {
             z: (problem.num_batches() as u32)
                 .div_ceil(self.tiling_scheme.global_partition_size.batches),
         };
-        let cube_count_plan = CubeCountPlan::from_blueprint(
-            &self.hypercube_blueprint,
-            target_cube_count,
-            &device_settings.max_cube_count,
+        let ruda_count_plan = RudaCountPlan::from_blueprint(
+            &self.hyperruda_blueprint,
+            target_ruda_count,
+            &device_settings.max_ruda_count,
         );
 
-        Ok((cube_dim, cube_count_plan))
+        Ok((ruda_dim, ruda_count_plan))
     }
 }
 
@@ -192,7 +192,7 @@ pub struct TilingBlueprintBuilder {
     lhs_layout: MatrixLayout,
     rhs_layout: MatrixLayout,
 
-    hypercube_blueprint: HypercubeBlueprint,
+    hyperruda_blueprint: HyperrudaBlueprint,
 
     shared_swizzle: SwizzleModes,
     partition_buffering: PartitionBuffering,
@@ -202,8 +202,8 @@ pub struct TilingBlueprintBuilder {
 }
 
 impl TilingBlueprintBuilder {
-    pub fn hypercube_blueprint(mut self, hypercube_blueprint: HypercubeBlueprint) -> Self {
-        self.hypercube_blueprint = hypercube_blueprint;
+    pub fn hyperruda_blueprint(mut self, hyperruda_blueprint: HyperrudaBlueprint) -> Self {
+        self.hyperruda_blueprint = hyperruda_blueprint;
         self
     }
 
@@ -241,7 +241,7 @@ impl TilingBlueprintBuilder {
             tile_matmul: self.tile_matmul,
             tiling_scheme: self.tiling_scheme,
             swizzle_modes: self.shared_swizzle,
-            hypercube_blueprint: self.hypercube_blueprint,
+            hyperruda_blueprint: self.hyperruda_blueprint,
             partition_buffering: self.partition_buffering,
             loading_precompute_strategy: self.loading_precompute_strategy,
             reader_mode: self.reader_mode,

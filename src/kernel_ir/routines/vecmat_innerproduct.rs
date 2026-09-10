@@ -1,11 +1,11 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::tiling::{
     PartitionSize, TileSize,
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation},
 };
 
 use crate::kernel_ir::{
@@ -113,7 +113,7 @@ impl<RC: RuntimeConfig> Routine<RC> for VecMatInnerProductAlgorithm {
             &device_settings.vector_sizes,
         )?;
 
-        let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+        let rudadim_resource = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
@@ -123,7 +123,7 @@ impl<RC: RuntimeConfig> Routine<RC> for VecMatInnerProductAlgorithm {
             blueprint,
             dtypes,
             problem,
-            cubedim_resource,
+            rudadim_resource,
             device_settings,
         )
     }
@@ -197,7 +197,7 @@ impl<RC: RuntimeConfig> Routine<RC> for DoubleVecMatInnerProductAlgorithm {
             &device_settings.vector_sizes,
         )?;
 
-        let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+        let rudadim_resource = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
@@ -207,7 +207,7 @@ impl<RC: RuntimeConfig> Routine<RC> for DoubleVecMatInnerProductAlgorithm {
             blueprint,
             dtypes,
             problem,
-            cubedim_resource,
+            rudadim_resource,
             device_settings,
         )
     }
@@ -225,22 +225,22 @@ fn infer_blueprint_vecmat<R: Runtime>(
         .with_stage_size((1, 1, 1).into())
         .build()
         .unwrap();
-    let cube_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
-        Some(num_sms) => CubeCountStrategy::Sm {
+    let ruda_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
+        Some(num_sms) => RudaCountStrategy::Sm {
             num_sms,
             sm_usage: SmAllocation::Exact,
-            cubes_first: true,
+            rudas_first: true,
         },
-        None => CubeCountStrategy::FromProblem,
+        None => RudaCountStrategy::FromProblem,
     };
 
-    let hypercube = HypercubeBlueprint::builder()
+    let hyperruda = HyperrudaBlueprint::builder()
         .global_order(GlobalOrder::SwizzleRow(2))
-        .cube_count_strategy(cube_count_strategy)
+        .ruda_count_strategy(ruda_count_strategy)
         .build();
 
     TilingBlueprint::builder(TileMatmulKind::PlaneVec, tiling_scheme, plane_dim, problem)
         .partition_buffering(PartitionBuffering::Single)
-        .hypercube_blueprint(hypercube)
+        .hyperruda_blueprint(hyperruda)
         .build()
 }

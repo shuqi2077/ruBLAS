@@ -1,10 +1,10 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::{
     cmp::{max, min},
     fmt::Display,
 };
 
-use ruda_kernel::tiling::cube_count::{CubeCountPlan, CubeCountStrategy, GlobalOrder, HypercubeBlueprint};
+use ruda_kernel::tiling::ruda_count::{RudaCountPlan, RudaCountStrategy, GlobalOrder, HyperrudaBlueprint};
 
 use crate::kernel_ir::{
     components::batch::{
@@ -71,7 +71,7 @@ impl Routine<()> for GemvUnitPerpendicularRoutine {
                     // terminating. OOB reads return zero (no contribution to acc).
                     CheckBounds::Checked
                 } else if !working_planes.is_multiple_of(num_planes) {
-                    // All work is fully valid, but some planes in the last cube are
+                    // All work is fully valid, but some planes in the last ruda are
                     // entirely idle and can be terminated.
                     CheckBounds::Terminate
                 } else {
@@ -82,8 +82,8 @@ impl Routine<()> for GemvUnitPerpendicularRoutine {
                     dtypes: dtypes.clone(),
                     num_planes,
                     tile_dim,
-                    hypercube_blueprint: HypercubeBlueprint::builder()
-                        .cube_count_strategy(CubeCountStrategy::Flattened)
+                    hyperruda_blueprint: HyperrudaBlueprint::builder()
+                        .ruda_count_strategy(RudaCountStrategy::Flattened)
                         .global_order(GlobalOrder::RowMajor)
                         .build(),
                     check_bounds,
@@ -109,27 +109,27 @@ impl Routine<()> for GemvUnitPerpendicularRoutine {
             &device_settings.vector_sizes,
         )?;
 
-        let cube_dim = Self::BatchMatmul::cubedim_resource(
+        let ruda_dim = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
         )?
-        .to_cube_dim(device_settings.plane_dim)?;
+        .to_ruda_dim(device_settings.plane_dim)?;
 
         let working_planes = problem.n.div_ceil(blueprint.tile_dim);
-        let working_cubes = working_planes.div_ceil(blueprint.num_planes);
+        let working_rudas = working_planes.div_ceil(blueprint.num_planes);
 
-        let cube_count_plan = CubeCountPlan::from_blueprint(
-            &blueprint.hypercube_blueprint,
-            (working_cubes as u32, 1, problem.num_batches() as u32).into(),
-            &device_settings.max_cube_count,
+        let ruda_count_plan = RudaCountPlan::from_blueprint(
+            &blueprint.hyperruda_blueprint,
+            (working_rudas as u32, 1, problem.num_batches() as u32).into(),
+            &device_settings.max_ruda_count,
         );
 
         Ok(LaunchInfo {
             blueprint,
             dtypes,
-            cube_dim,
-            cube_count_plan,
+            ruda_dim,
+            ruda_count_plan,
             address_type: problem.address_type,
             vector_sizes: device_settings.vector_sizes,
         })

@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::global::read::{
     FullStageGlobalReader, PartialLoadingStrategy, PartialStageGlobalReader, StageBuffer,
 };
@@ -55,7 +55,7 @@ pub struct DoubleBufferingMatmul<
     _writer: PhantomData<GW>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes, SMM, RC, LL, RL, AL, GW> GlobalMatmul<RC, MP>
     for DoubleBufferingMatmul<MP, SMM, RC, LL, RL, AL, GW>
 where

@@ -1,9 +1,9 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::ir::features::MmaConfig;
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::tiling::{
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation},
     tile::Strided,
 };
 use std::{fmt::Display, marker::PhantomData};
@@ -195,7 +195,7 @@ where
             &device_settings.vector_sizes,
         )?;
 
-        let cubedim_resource = Self::BatchMatmul::cubedim_resource(
+        let rudadim_resource = Self::BatchMatmul::rudadim_resource(
             &blueprint,
             &dtypes,
             &device_settings.vector_sizes,
@@ -205,7 +205,7 @@ where
             blueprint,
             dtypes,
             problem,
-            cubedim_resource,
+            rudadim_resource,
             device_settings,
         )
     }
@@ -234,13 +234,13 @@ fn infer_blueprint_multi_rows<R: Runtime>(
             },
         )
     };
-    let cube_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
-        Some(num_sms) => CubeCountStrategy::Sm {
+    let ruda_count_strategy = match client.properties().hardware.num_streaming_multiprocessors {
+        Some(num_sms) => RudaCountStrategy::Sm {
             num_sms,
             sm_usage: SmAllocation::Exact,
-            cubes_first: true,
+            rudas_first: true,
         },
-        None => CubeCountStrategy::Flattened,
+        None => RudaCountStrategy::Flattened,
     };
 
     if supported(8, 32, 16) {
@@ -253,15 +253,15 @@ fn infer_blueprint_multi_rows<R: Runtime>(
             .build()
             .unwrap();
 
-        let hypercube = HypercubeBlueprint::builder()
+        let hyperruda = HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(4))
-            .cube_count_strategy(cube_count_strategy)
+            .ruda_count_strategy(ruda_count_strategy)
             .build();
 
         Ok((
             TilingBlueprint::builder(tile_matmul, tiling_scheme, plane_dim, problem)
                 .partition_buffering(PartitionBuffering::Single)
-                .hypercube_blueprint(hypercube)
+                .hyperruda_blueprint(hyperruda)
                 .build(),
             dtypes,
         ))
@@ -272,15 +272,15 @@ fn infer_blueprint_multi_rows<R: Runtime>(
             .with_stage_size((4, 1, 1).into())
             .build()
             .unwrap();
-        let hypercube = HypercubeBlueprint::builder()
+        let hyperruda = HyperrudaBlueprint::builder()
             .global_order(GlobalOrder::SwizzleRow(4))
-            .cube_count_strategy(cube_count_strategy)
+            .ruda_count_strategy(ruda_count_strategy)
             .build();
 
         Ok((
             TilingBlueprint::builder(tile_matmul, tiling_scheme, plane_dim, problem)
                 .partition_buffering(PartitionBuffering::Single)
-                .hypercube_blueprint(hypercube)
+                .hyperruda_blueprint(hyperruda)
                 .build(),
             dtypes,
         ))

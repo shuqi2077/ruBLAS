@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::fmt::Display;
 
 use crate::kernel_ir::{
@@ -14,7 +14,7 @@ use ruda_kernel::dsl::ir::StorageType;
 use ruda_kernel::dsl::ir::VectorSize;
 use ruda_kernel::tiling::{
     MatrixLayout,
-    cube_count::{CubeCountStrategy, GlobalOrder, HypercubeBlueprint, SmAllocation},
+    ruda_count::{RudaCountStrategy, GlobalOrder, HyperrudaBlueprint, SmAllocation},
     stage::SwizzleMode,
 };
 
@@ -525,24 +525,24 @@ fn selection(
         .build()
         .unwrap();
 
-    let cube_count_strategy = match num_sms {
-        Some(num_sms) => CubeCountStrategy::Sm {
+    let ruda_count_strategy = match num_sms {
+        Some(num_sms) => RudaCountStrategy::Sm {
             num_sms,
             sm_usage: SmAllocation::Exact,
-            cubes_first: false,
+            rudas_first: false,
         },
-        None => CubeCountStrategy::Flattened,
+        None => RudaCountStrategy::Flattened,
     };
 
-    let hypercube = HypercubeBlueprint::builder()
+    let hyperruda = HyperrudaBlueprint::builder()
         .global_order(global_order)
-        .cube_count_strategy(cube_count_strategy)
+        .ruda_count_strategy(ruda_count_strategy)
         .build();
 
     let mut builder =
         TilingBlueprint::builder(TileMatmulKind::Register, tiling_scheme, plane_dim, problem)
             .partition_buffering(buffering)
-            .hypercube_blueprint(hypercube);
+            .hyperruda_blueprint(hyperruda);
 
     if swizzle {
         let lhs_swizzle_dim = match problem.lhs_layout {

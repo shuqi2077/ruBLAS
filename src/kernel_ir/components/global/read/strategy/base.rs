@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::{
         global::{GlobalReaderConfig, SharedGlobalMatmulConfig, memory::GlobalIterator},
@@ -16,7 +16,7 @@ use ruda_kernel::tiling::{
     {InvalidConfigError, MatrixLayout},
 };
 
-#[cube]
+#[ruda]
 /// A loading job represents a sequence of loading tasks.
 /// Each task is the smallest unit of loading work:
 /// one unit at one iteration, operating at a specific point within a read view.
@@ -29,7 +29,7 @@ pub trait LoadingJob<
     NS: Size,
     TL: TilingLayout,
     S: SyncStrategy,
->: CubeType + Clone
+>: RudaType + Clone
 {
     type Stage: StageFamily;
 
@@ -50,9 +50,9 @@ pub trait LoadingJob<
 /// A synchronization strategy determines the type of synchronization object, how to create it and
 /// how to synchronize on it.
 /// The sync strategy must match the one on both the LHS and RHS loading strategy.
-#[cube]
+#[ruda]
 pub trait SyncStrategy {
-    type Barrier: CubeType + Clone;
+    type Barrier: RudaType + Clone;
     fn create_barrier() -> Self::Barrier;
     fn sync<MP: MatmulTypes, S: StageConfig>(
         barrier: &mut Self::Barrier,
@@ -79,7 +79,7 @@ pub trait LoadingValidation {
 pub fn validate_async_barrier(device_props: &DeviceProperties) -> Result<(), InvalidConfigError> {
     if !device_props
         .features
-        .supports_type(OpaqueType::Barrier(BarrierLevel::Cube))
+        .supports_type(OpaqueType::Barrier(BarrierLevel::Ruda))
     {
         return Err(Box::new(
             "Async barrier instructions are not available on the current device",

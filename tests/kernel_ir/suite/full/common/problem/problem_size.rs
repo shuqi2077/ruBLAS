@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 mod g16x8x16 {
     use super::*;
     use ruda_kernel::dsl::zspace::shape;

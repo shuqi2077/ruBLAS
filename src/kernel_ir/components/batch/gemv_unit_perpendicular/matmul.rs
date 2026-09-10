@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::{
@@ -10,15 +10,15 @@ use crate::kernel_ir::{
             VecMatUnitPerpendicularFamily,
         },
     },
-    definition::{cube_pos_to_matrix_batch, *},
+    definition::{ruda_pos_to_matrix_batch, *},
     launch::MatmulArgs,
 };
 
 use ruda_kernel::dsl::prelude::*;
-use ruda_kernel::dsl::cube;
+use ruda_kernel::dsl::ruda;
 use ruda_kernel::dsl::num_traits::Zero;
 
-#[cube(launch_unchecked, explicit_define, address_type = "dynamic")]
+#[ruda(launch_unchecked, explicit_define, address_type = "dynamic")]
 #[allow(clippy::type_complexity)]
 /// Launches the matmul kernel
 pub(crate) fn matmul_entry<
@@ -37,7 +37,7 @@ pub(crate) fn matmul_entry<
     >,
     output: &mut <Args as MatmulArgs>::Output<Vector<Acc, AccSize>>,
     runtime_config: (),
-    cube_mapping: CubeMapping,
+    ruda_mapping: RudaMapping,
     #[comptime] blueprint: VecMatUnitPerpendicularBlueprint,
     #[define(Lhs, Rhs, Acc)] _global: [StorageType; 3],
     #[define(LhsSize, RhsSize, AccSize)] _sizes: [usize; 3],
@@ -93,20 +93,20 @@ pub(crate) fn matmul_entry<
         (Lhs, LhsSize, Lhs, LhsSize, RegisterLhs, LhsSize),
         (Rhs, RhsSize, Rhs, RhsSize, RegisterRhs, RhsSize),
         (Acc, AccSize, Acc, AccSize, RegisterAcc, AccSize),
-    )>::execute::<Args>(&mut state, cube_mapping, config);
+    )>::execute::<Args>(&mut state, ruda_mapping, config);
 }
 
 pub struct VecMatUnitPerpendicular<MP: MatmulTypes> {
     _phantom: PhantomData<MP>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatUnitPerpendicular<MP> {
     type Config = VecMatUnitPerpendicularConfig;
 
     fn execute<Args: MatmulArgs>(
         state: &mut Args::State<LhsG<MP>, RhsG<MP>, AccG<MP>>,
-        cube_mapping: CubeMapping,
+        ruda_mapping: RudaMapping,
         #[comptime] config: Self::Config,
     ) {
         let num_planes = config.num_planes;
@@ -119,11 +119,11 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatUnitPerpendicular<MP> {
 
         let (_, _, k) = lhs.shape();
         let (_, _, n) = out.shape();
-        let (n_cube_id, batch_cube_id) = cube_pos_to_matrix_batch(&cube_mapping);
+        let (n_ruda_id, batch_ruda_id) = ruda_pos_to_matrix_batch(&ruda_mapping);
 
-        let lhs_batch = Args::batch_lhs(state, batch_cube_id as usize);
-        let rhs_batch = Args::batch_rhs(state, batch_cube_id as usize);
-        let out_batch = Args::batch_out(state, batch_cube_id as usize);
+        let lhs_batch = Args::batch_lhs(state, batch_ruda_id as usize);
+        let rhs_batch = Args::batch_rhs(state, batch_ruda_id as usize);
+        let out_batch = Args::batch_out(state, batch_ruda_id as usize);
 
         let lhs = lhs.view(SliceIndex::new(lhs_batch, lhs.shape()));
         let rhs = rhs.view(SliceIndex::new(rhs_batch, rhs.shape()));
@@ -136,7 +136,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatUnitPerpendicular<MP> {
         let unit_id = UNIT_POS_X;
 
         let tile_size = plane_dim * vector_size;
-        let absolute_plane_id = n_cube_id * num_planes + plane_id;
+        let absolute_plane_id = n_ruda_id * num_planes + plane_id;
         let unit_pos_n = absolute_plane_id * plane_dim + unit_id;
         let vectorized_pos_n = unit_pos_n * vector_size;
 
@@ -191,7 +191,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for VecMatUnitPerpendicular<MP> {
     }
 }
 
-#[cube]
+#[ruda]
 fn shuffle<E: Numeric, N: Size>(
     shared_value: Vector<E, N>,
     unit: u32,

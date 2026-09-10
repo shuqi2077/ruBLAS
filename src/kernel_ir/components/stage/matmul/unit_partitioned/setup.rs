@@ -1,6 +1,6 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::{
-    CubeDimResource,
+    RudaDimResource,
     global::{MatmulPlaneCounts, PartitionedStage, PartitionedStageFamily, PlaneFlowConfig},
     stage::{
         NumStages, PartitionBuffering, PartitionSchedulerScheme, StageFamily, StageMatmulFamily,
@@ -132,11 +132,11 @@ impl<StageIn: StageFamily, StageAcc: StageFamily> StageMatmulFamily
         ))
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &TilingBlueprint,
-    ) -> Result<CubeDimResource, InvalidConfigError> {
-        if let CubeDimResource::Units(units) = blueprint.tile_matmul.cubedim_resource()? {
-            Ok(CubeDimResource::Units(
+    ) -> Result<RudaDimResource, InvalidConfigError> {
+        if let RudaDimResource::Units(units) = blueprint.tile_matmul.rudadim_resource()? {
+            Ok(RudaDimResource::Units(
                 units
                     * blueprint.tiling_scheme.partitions_per_stage_along_m()
                     * blueprint.tiling_scheme.partitions_per_stage_along_n(),
@@ -157,7 +157,7 @@ impl<StageIn: StageFamily, StageAcc: StageFamily> StageMatmulFamily
         let working_units = blueprint.tiling_scheme.partitions_per_stage_along_m()
             * blueprint.tiling_scheme.partitions_per_stage_along_n();
         let num_compute_planes =
-            Self::cubedim_resource(blueprint)?.num_planes(blueprint.plane_dim)?;
+            Self::rudadim_resource(blueprint)?.num_planes(blueprint.plane_dim)?;
         let num_units = blueprint.plane_dim * num_compute_planes;
 
         if num_units != working_units {

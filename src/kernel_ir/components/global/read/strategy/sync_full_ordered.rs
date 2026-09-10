@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::global::read::validate_swizzle_atom_size,
     components::global::{multi_stage::LoadMaxRoundPlaneCount, read::sync::Synchronous},
@@ -20,7 +20,7 @@ use ruda_kernel::tiling::{
 
 use super::{LoadingValidation, sync_full_tilewise};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Similar to `sync_full_tilewise`, but includes additional validation checks.
 ///
 /// This function operates only on the LHS (left-hand side).
@@ -105,7 +105,7 @@ impl LoadMaxRoundPlaneCount for SyncFullOrderedLoading {
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> FullLoadingStrategy<RC> for SyncFullOrderedLoading {
     type TilingLayout = ContiguousTilingLayout<OrderedTilingOrder>;
     type SyncStrategy = Synchronous;

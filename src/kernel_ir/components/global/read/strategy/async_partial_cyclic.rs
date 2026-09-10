@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::global::{
@@ -44,11 +44,11 @@ use ruda_kernel::tiling::{InvalidConfigError, tile::Strided};
 
 use super::{LoadingJob, LoadingValidation, ReaderMode};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using all planes.
 /// Unit with pos X loads vectors with indices X, X + NUM_UNITS, X + 2 * NUM_UNITS, ...
 pub struct AsyncPartialCyclicLoading<T: TilingOrder> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _phantom: PhantomData<T>,
 }
 
@@ -125,7 +125,7 @@ impl<TO: TilingOrder> LoadMaxRoundPlaneCount for AsyncPartialCyclicLoading<TO> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> PartialLoadingStrategy<RC>
     for AsyncPartialCyclicLoading<TO>
 {
@@ -177,29 +177,29 @@ impl<TO: TilingOrder, RC: RuntimeConfig> PartialLoadingStrategy<RC>
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncPartialCyclicJob {
     unit_position_base: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_index: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     jump_length: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_vectors_per_tile: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     balanced_workload: bool,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_stage_elements: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     reader_mode: ReaderMode,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     copy_vector_size: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     LoadingJob<EG, NG, ES, NS, ContiguousTilingLayout<TO>, AsyncCopy> for AsyncPartialCyclicJob
 {
@@ -237,7 +237,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     }
 }
 
-#[cube]
+#[ruda]
 pub(crate) fn copy_vector<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>(
     job: &AsyncPartialCyclicJob,
     unit_position: u32,
@@ -282,7 +282,7 @@ pub(crate) fn copy_vector<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: Tili
     async_copy_from(view, pos, stage, stage_offset, config, job.copy_vector_size);
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> AsyncPartialLoadingStrategy<RC>
     for AsyncPartialCyclicLoading<TO>
 {

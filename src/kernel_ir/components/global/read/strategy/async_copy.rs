@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::barrier::copy_async;
 use ruda_kernel::dsl::prelude::barrier::copy_async_checked;
 use ruda_kernel::dsl::prelude::*;
@@ -14,7 +14,7 @@ use crate::kernel_ir::components::{
 /// The instruction has a max width of 128 bits, even on Blackwell which supports 256-bit loads
 pub(crate) const ASYNC_COPY_WIDTH: u32 = 128;
 
-#[cube]
+#[ruda]
 pub(crate) fn async_copy_from<EG: Scalar, NG: Size, ES: Numeric, NS: Size, T: TilingLayout>(
     view: View<Vector<EG, NG>, Coords2d>,
     pos: Coords2d,

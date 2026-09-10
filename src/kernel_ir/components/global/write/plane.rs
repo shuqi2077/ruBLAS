@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::{
     components::{
         global::{
@@ -15,20 +15,20 @@ use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
 use ruda_kernel::tiling::{stage::StageMemoryConfig, tile::StridedTile};
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Writes tiles from out shared memory to output global memory
 /// using a plane for each tile
 pub struct PlaneWriter<IP: MatrixTypes> {
     global: View<Vector<IP::Global, IP::GlobalSize>, TiledCoords, ReadWrite>,
     stage: PartitionedStage<IP::Stage, IP::StageSize>,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     plane_dim: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     smem_config: StageMemoryConfig,
 }
 
-#[cube]
+#[ruda]
 impl<IP: MatrixTypes> PlaneWriter<IP> {
     pub fn new(
         global: View<Vector<IP::Global, IP::GlobalSize>, Coords2d, ReadWrite>,
@@ -62,7 +62,7 @@ impl<IP: MatrixTypes> PlaneWriter<IP> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<IP: MatrixTypes> WriteEventListener for PlaneWriter<IP> {
     fn on_event(this: &mut Self, event: super::WriteEvent) {
         #[allow(clippy::single_match)]
@@ -75,7 +75,7 @@ impl<IP: MatrixTypes> WriteEventListener for PlaneWriter<IP> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<IP: MatrixTypes> GlobalWriter<IP> for PlaneWriter<IP> {
     type Stage = PartitionedStage<IP::Stage, IP::StageSize>;
 
@@ -91,7 +91,7 @@ impl<IP: MatrixTypes> GlobalWriter<IP> for PlaneWriter<IP> {
     }
 }
 
-#[cube]
+#[ruda]
 pub fn plane_write<ES: Numeric, NS: Size, EG: Numeric, NG: Size>(
     global: &mut View<Vector<EG, NG>, TiledCoords, ReadWrite>,
     smem_tile: &StridedTile<ES, NS, ReadWrite>,
@@ -120,7 +120,7 @@ pub fn plane_write<ES: Numeric, NS: Size, EG: Numeric, NG: Size>(
     }
 }
 
-#[cube]
+#[ruda]
 fn write_vector<ES: Numeric, NS: Size, EG: Numeric, NG: Size>(
     view: &mut View<Vector<EG, NG>, TiledCoords, ReadWrite>,
     out_smem_tile: &StridedTile<ES, NS, ReadWrite>,

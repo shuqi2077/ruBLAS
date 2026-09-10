@@ -1,7 +1,7 @@
-use ruda_kernel::dsl as cubecl;
-use crate::kernel_ir::components::{global::cube_dim_validation, stage::NumStages};
+use ruda_kernel::dsl as kernel_dsl;
+use crate::kernel_ir::components::{global::ruda_dim_validation, stage::NumStages};
 use crate::kernel_ir::definition::{
-    Blueprint, CubeMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulVectorSizes,
+    Blueprint, RudaMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulVectorSizes,
     TilingBlueprint,
 };
 use crate::kernel_ir::{
@@ -11,11 +11,11 @@ use crate::kernel_ir::{
 use crate::kernel_ir::{
     launch::{InputRuntimeArg, MatmulArgs, OutputRuntimeArg},
     routines::BlueprintStrategy,
-    {components::CubeDimResource, launch::RuntimeConfig},
+    {components::RudaDimResource, launch::RuntimeConfig},
 };
 use ruda_kernel::dsl::ir::HardwareProperties;
 use ruda_kernel::dsl::prelude::*;
-use ruda_kernel::tiling::cube_count::CubeCountPlan;
+use ruda_kernel::tiling::ruda_count::RudaCountPlan;
 use std::fmt::Display;
 
 /// Specifications for a matmul algorithm
@@ -29,13 +29,13 @@ pub trait Routine<RC: RuntimeConfig>: Sized {
     #[allow(clippy::too_many_arguments, clippy::result_large_err)]
     fn launch<MA: MatmulArgs<Config = RC>, R: Runtime>(
         client: &ComputeClient<R>,
-        cube_dim: CubeDim,
-        cube_count: CubeCount,
+        ruda_dim: RudaDim,
+        ruda_count: RudaCount,
         address_type: AddressType,
         input: InputRuntimeArg<MA, R>,
         output: OutputRuntimeArg<MA, R>,
         config: ConfigRuntimeArg<MA, R>,
-        cube_count_input: CubeMappingLaunch<R>,
+        ruda_count_input: RudaMappingLaunch<R>,
         blueprint: Self::Blueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
@@ -43,13 +43,13 @@ pub trait Routine<RC: RuntimeConfig>: Sized {
         unsafe {
             Self::BatchMatmul::launch_unchecked::<MA, R>(
                 client,
-                cube_dim,
-                cube_count,
+                ruda_dim,
+                ruda_count,
                 address_type,
                 input,
                 output,
                 config,
-                cube_count_input,
+                ruda_count_input,
                 blueprint,
                 dtypes,
                 vector_sizes,
@@ -92,7 +92,7 @@ pub trait Routine<RC: RuntimeConfig>: Sized {
             client: client.clone(),
             plane_dim,
             vector_sizes,
-            max_cube_count: client.properties().hardware.max_cube_count,
+            max_ruda_count: client.properties().hardware.max_ruda_count,
         }
     }
 
@@ -118,8 +118,8 @@ pub struct LaunchInfo<B: Blueprint> {
     pub blueprint: B,
     pub dtypes: MatmulElems,
     pub vector_sizes: MatmulVectorSizes,
-    pub cube_dim: CubeDim,
-    pub cube_count_plan: CubeCountPlan,
+    pub ruda_dim: RudaDim,
+    pub ruda_count_plan: RudaCountPlan,
     pub address_type: AddressType,
 }
 
@@ -128,18 +128,18 @@ impl LaunchInfo<TilingBlueprint> {
         blueprint: TilingBlueprint,
         dtypes: MatmulElems,
         problem: &MatmulProblem,
-        compute_resources: CubeDimResource,
+        compute_resources: RudaDimResource,
         device_settings: &DeviceSettings<R>,
     ) -> Result<Self, MatmulSetupError> {
-        let (cube_dim, cube_count_plan) =
-            blueprint.cube_launch_info(compute_resources, problem, device_settings)?;
-        cube_dim_validation(cube_dim)?;
+        let (ruda_dim, ruda_count_plan) =
+            blueprint.ruda_launch_info(compute_resources, problem, device_settings)?;
+        ruda_dim_validation(ruda_dim)?;
 
         Ok(LaunchInfo {
             blueprint,
             dtypes,
-            cube_dim,
-            cube_count_plan,
+            ruda_dim,
+            ruda_count_plan,
             address_type: problem.address_type,
             vector_sizes: device_settings.vector_sizes,
         })
@@ -150,7 +150,7 @@ pub struct DeviceSettings<R: Runtime> {
     pub client: ComputeClient<R>,
     pub plane_dim: u32,
     pub vector_sizes: MatmulVectorSizes,
-    pub max_cube_count: (u32, u32, u32),
+    pub max_ruda_count: (u32, u32, u32),
 }
 
 pub(crate) fn num_concurrent_planes(properties: &HardwareProperties) -> usize {

@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::library::tensor::layout::Coords2d;
 use ruda_kernel::dsl::ir::DeviceProperties;
 use ruda_kernel::dsl::prelude::*;
@@ -10,7 +10,7 @@ use ruda_kernel::tiling::{
 
 use crate::kernel_ir::{
     components::{
-        CubeDimResource,
+        RudaDimResource,
         global::{PlaneFlowConfig, WriteEventListener},
         stage::{NumStages, PartitionScheduler},
     },
@@ -69,8 +69,8 @@ pub trait StageMatmulFamily: Send + Sync + 'static {
     ) -> Result<Self::Config, MatmulSetupError>;
 
     /// Returns the compute resources required to run this matmul.
-    fn cubedim_resource(blueprint: &TilingBlueprint)
-    -> Result<CubeDimResource, InvalidConfigError>;
+    fn rudadim_resource(blueprint: &TilingBlueprint)
+    -> Result<RudaDimResource, InvalidConfigError>;
 
     fn validate_blueprint<R: Runtime>(
         client: &ComputeClient<R>,
@@ -80,12 +80,12 @@ pub trait StageMatmulFamily: Send + Sync + 'static {
     ) -> Result<(), MatmulSetupError>;
 }
 
-#[cube]
+#[ruda]
 /// Provides matrix multiplication operations at the stage level.
 ///
 /// At the stage level,
 ///  - Inputs are assumed to be already staged into a shared memory.
-///  - All main flow planes within a Cube are used to solve the problem
+///  - All main flow planes within a Ruda are used to solve the problem
 ///  - Dimensions M, N and K are fixed to an integer, and the
 ///    matrix multiplication works only for size (M, K) · (K, N) = (M, N).
 ///    These integers are multiples of the underlying Tile matmul,
@@ -102,23 +102,23 @@ pub trait StageMatmul<MP: MatmulTypes>: 'static + Send + Sync {
     /// Compute primitive used by the underlying tile matmul.
     type Scope: TileScope;
 
-    /// Contains the matrix multiplication output, that can be shared across the different planes of the cube.
+    /// Contains the matrix multiplication output, that can be shared across the different planes of the ruda.
     /// The same Accumulator will be added to across multiple executions of the Stage Matmul.
-    type Accumulators: CubeType;
+    type Accumulators: RudaType;
 
     /// Stage for Lhs
-    type LhsStage: CubeType;
+    type LhsStage: RudaType;
     /// Stage for Rhs
-    type RhsStage: CubeType;
+    type RhsStage: RudaType;
     /// Stage for Accumulator
-    type AccStage: CubeType;
+    type AccStage: RudaType;
     /// Stage for Out
-    type OutStage: CubeType;
+    type OutStage: RudaType;
 
     /// Lhs input of the underlying Tile Matmul
-    type LhsTile: CubeType;
+    type LhsTile: RudaType;
     /// Rhs input of the underlying Tile Matmul
-    type RhsTile: CubeType;
+    type RhsTile: RudaType;
 
     /// Executes the matrix multiplication of Lhs and Rhs, adding the result to the accumulator
     ///
@@ -200,9 +200,9 @@ pub enum PartitionBuffering {
 
 /// Stage that can be divided into tiles, with the same kind used by the
 /// tile matmul readers.
-#[cube]
+#[ruda]
 pub trait Stage<ES: Numeric, IO: SliceVisibility = ReadOnly>:
-    CubeType + Clone + Send + Sync + 'static
+    RudaType + Clone + Send + Sync + 'static
 {
     /// Slices a tile with offset (`row`, `col`) from the stage and returns it.
     ///
@@ -220,7 +220,7 @@ pub trait StageFamily<IO: SliceVisibility = ReadOnly>: Send + Sync + 'static {
 }
 
 /// Stage family that can be used as the target of a loader
-#[cube]
+#[ruda]
 pub trait LoadStageFamily<IO: SliceVisibility = ReadOnly>: StageFamily {
     /// Create a new stage from the config and alignment
     fn create<ES: Numeric, NS: Size, T: TilingLayout>(
@@ -236,7 +236,7 @@ pub trait LoadStageFamily<IO: SliceVisibility = ReadOnly>: StageFamily {
     fn free<ES: Numeric, NS: Size, T: TilingLayout>(stage: &Self::Stage<ES, NS, T>);
 }
 
-#[cube]
+#[ruda]
 impl<ES: Numeric, IO: SliceVisibility, Inner: Stage<ES, IO>> Stage<ES, IO>
     for ComptimeOption<Inner>
 {
@@ -250,7 +250,7 @@ impl<ES: Numeric, IO: SliceVisibility, Inner: Stage<ES, IO>> Stage<ES, IO>
     }
 }
 
-#[cube]
+#[ruda]
 impl<IO: SliceVisibility, S: LoadStageFamily<IO>> LoadStageFamily<IO> for Option<S> {
     fn create<ES: Numeric, NS: Size, T: TilingLayout>(
         #[comptime] alignment: usize,

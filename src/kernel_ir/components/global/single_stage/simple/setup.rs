@@ -1,5 +1,5 @@
-use ruda_kernel::dsl as cubecl;
-use crate::kernel_ir::{components::CubeDimResource, launch::RuntimeConfig};
+use ruda_kernel::dsl as kernel_dsl;
+use crate::kernel_ir::{components::RudaDimResource, launch::RuntimeConfig};
 use crate::kernel_ir::{
     components::stage::NumStages,
     definition::{
@@ -79,7 +79,7 @@ where
     ) -> Result<Self::Config, MatmulSetupError> {
         let plane_dim = blueprint.plane_dim;
         let plane_flow_config =
-            Self::cubedim_resource(blueprint, dtypes, vector_sizes)?.as_specialized(plane_dim)?;
+            Self::rudadim_resource(blueprint, dtypes, vector_sizes)?.as_specialized(plane_dim)?;
 
         let stage_config = SMM::expand_config(
             device_props,
@@ -182,13 +182,13 @@ where
         (1, 1).into()
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &TilingBlueprint,
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError> {
+    ) -> Result<RudaDimResource, MatmulSetupError> {
         let resources = if !blueprint.load_flows.has_specialization() {
-            SMM::cubedim_resource(blueprint)
+            SMM::rudadim_resource(blueprint)
         } else {
             return Err(MatmulSetupError::InvalidConfig(Box::new(
                 "Specialization is unavailable for simple matmul.",

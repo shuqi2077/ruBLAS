@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::global::{
     GlobalReaderConfig, GlobalWriterConfig, SharedGlobalMatmulConfig, make_plane_flow_config,
 };
@@ -16,7 +16,7 @@ use crate::kernel_ir::{
 use crate::kernel_ir::{
     components::global::{WriteTiling, read::PartialLoadingStrategy},
     components::stage::StageConfig,
-    components::{CubeDimResource, global::read::FullLoadingStrategy},
+    components::{RudaDimResource, global::read::FullLoadingStrategy},
     components::{global::GlobalMatmulFamily, stage},
     components::{global::MaxGlobalReaderPlanes, stage::NumStages},
     definition::TilingBlueprint,
@@ -76,7 +76,7 @@ where
     ) -> Result<Self::Config, MatmulSetupError> {
         let plane_dim = blueprint.plane_dim;
         let plane_flow_config =
-            Self::cubedim_resource(blueprint, dtypes, vector_sizes)?.as_specialized(plane_dim)?;
+            Self::rudadim_resource(blueprint, dtypes, vector_sizes)?.as_specialized(plane_dim)?;
 
         let stage_config = SMM::expand_config(
             device_props,
@@ -177,11 +177,11 @@ where
         (2, 2).into()
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &TilingBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError> {
+    ) -> Result<RudaDimResource, MatmulSetupError> {
         let max_global_readers = blueprint.load_flows.has_specialization().then(|| {
             MaxGlobalReaderPlanes::new::<LL, RL>(
                 &blueprint.tiling_scheme,
@@ -194,10 +194,10 @@ where
         let plane_flow_config = make_plane_flow_config(
             blueprint.load_flows,
             max_global_readers,
-            SMM::cubedim_resource(blueprint)?.num_planes(blueprint.plane_dim)?,
+            SMM::rudadim_resource(blueprint)?.num_planes(blueprint.plane_dim)?,
         )?;
 
-        Ok(CubeDimResource::Specialized(plane_flow_config))
+        Ok(RudaDimResource::Specialized(plane_flow_config))
     }
 
     fn validate_blueprint<R: Runtime>(

@@ -1,7 +1,7 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
-#[cube(launch)]
+#[ruda(launch)]
 pub(super) fn grouped_nt<F: Float>(
     input: &Array<F>,
     weights: &Array<F>,

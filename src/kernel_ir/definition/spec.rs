@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::ir::StorageType;
 use ruda_kernel::dsl::prelude::*;
 use half::{bf16, f16};

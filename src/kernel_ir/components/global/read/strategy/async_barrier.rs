@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::barrier::Barrier;
 use ruda_kernel::dsl::prelude::*;
 
@@ -13,12 +13,12 @@ use crate::kernel_ir::{
 /// Asynchronous barrier for `async_memcpy`
 pub struct AsyncBarrier {}
 
-#[cube]
+#[ruda]
 impl SyncStrategy for AsyncBarrier {
     type Barrier = Shared<Barrier>;
 
     fn create_barrier() -> Self::Barrier {
-        Barrier::shared(CUBE_DIM, UNIT_POS == 0)
+        Barrier::shared(RUDA_DIM, UNIT_POS == 0)
     }
 
     fn sync<MP: MatmulTypes, S: StageConfig>(
@@ -32,12 +32,12 @@ impl SyncStrategy for AsyncBarrier {
 /// Asynchronous barrier for `async_copy`
 pub struct AsyncCopy {}
 
-#[cube]
+#[ruda]
 impl SyncStrategy for AsyncCopy {
     type Barrier = Shared<Barrier>;
 
     fn create_barrier() -> Self::Barrier {
-        Barrier::shared(CUBE_DIM, UNIT_POS == 0)
+        Barrier::shared(RUDA_DIM, UNIT_POS == 0)
     }
 
     fn sync<MP: MatmulTypes, S: StageConfig>(

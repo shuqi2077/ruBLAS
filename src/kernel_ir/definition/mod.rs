@@ -1,6 +1,6 @@
 mod base;
 mod blueprint;
-mod cube_mapping;
+mod ruda_mapping;
 mod error;
 mod spec;
 mod tiling_scheme;
@@ -8,8 +8,8 @@ mod vectorization;
 
 pub use base::*;
 pub use blueprint::*;
-pub use cube_mapping::*;
-// Internal-only — external crates import these directly from cubek-std.
+pub use ruda_mapping::*;
+// Internal-only — external crates import these directly from ruda-kernel::tiling.
 pub(crate) use ruda_kernel::tiling::{StageIdent, SwizzleModes};
 pub use error::*;
 pub use spec::*;

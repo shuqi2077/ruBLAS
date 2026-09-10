@@ -1,16 +1,16 @@
-use ruda_kernel::dsl as cubecl;
-use ruda_kernel::dsl::CubeCount;
-use ruda_kernel::dsl::CubeDim;
+use ruda_kernel::dsl as kernel_dsl;
+use ruda_kernel::dsl::RudaCount;
+use ruda_kernel::dsl::RudaDim;
 use ruda_kernel::dsl::Runtime;
 use ruda_kernel::dsl::client::ComputeClient;
 use ruda_kernel::dsl::ir::AddressType;
 use ruda_kernel::dsl::ir::DeviceProperties;
 use ruda_kernel::dsl::server::LaunchError;
-use ruda_kernel::tiling::{MatrixLayout, cube_count::HypercubeBlueprint};
+use ruda_kernel::tiling::{MatrixLayout, ruda_count::HyperrudaBlueprint};
 
 use crate::kernel_ir::{
     components::{
-        CubeDimResource,
+        RudaDimResource,
         batch::{
             BatchMatmulFamily, CheckBounds,
             gemv_unit_perpendicular::{
@@ -21,7 +21,7 @@ use crate::kernel_ir::{
         stage::NumStages,
     },
     definition::{
-        Blueprint, CubeMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulTypes,
+        Blueprint, RudaMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulTypes,
         MatmulVectorSizes, SwizzleModes, TilingScheme,
     },
     launch::*,
@@ -35,7 +35,7 @@ pub struct VecMatUnitPerpendicularBlueprint {
     pub num_planes: usize,
     // Should equal plane_dim * vector_size
     pub tile_dim: usize,
-    pub hypercube_blueprint: HypercubeBlueprint,
+    pub hyperruda_blueprint: HyperrudaBlueprint,
     pub check_bounds: CheckBounds,
 }
 
@@ -102,13 +102,13 @@ impl BatchMatmulFamily<()> for VecMatUnitPerpendicularFamily {
 
     unsafe fn launch_unchecked<'a, MA: MatmulArgs<Config = ()>, R: Runtime>(
         client: &ComputeClient<R>,
-        cube_dim: CubeDim,
-        cube_count: CubeCount,
+        ruda_dim: RudaDim,
+        ruda_count: RudaCount,
         address_type: AddressType,
         input: InputRuntimeArg<MA, R>,
         output: OutputRuntimeArg<MA, R>,
         _config: ConfigRuntimeArg<MA, R>,
-        cube_mapping: CubeMappingLaunch<R>,
+        ruda_mapping: RudaMappingLaunch<R>,
         blueprint: VecMatUnitPerpendicularBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
@@ -116,13 +116,13 @@ impl BatchMatmulFamily<()> for VecMatUnitPerpendicularFamily {
         unsafe {
             matmul_entry::launch_unchecked::<MA, Lhs, LhsSize, Rhs, RhsSize, Acc, AccSize, R>(
                 client,
-                cube_count,
-                cube_dim,
+                ruda_count,
+                ruda_dim,
                 address_type,
                 input,
                 output,
                 (),
-                cube_mapping,
+                ruda_mapping,
                 blueprint,
                 [dtypes.lhs_global, dtypes.rhs_global, dtypes.acc_global],
                 [vector_sizes.lhs, vector_sizes.rhs, vector_sizes.out],
@@ -132,12 +132,12 @@ impl BatchMatmulFamily<()> for VecMatUnitPerpendicularFamily {
         Ok(())
     }
 
-    fn cubedim_resource(
+    fn rudadim_resource(
         blueprint: &Self::Blueprint,
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
-    ) -> Result<CubeDimResource, MatmulSetupError> {
-        Ok(CubeDimResource::Planes(blueprint.num_planes as u32))
+    ) -> Result<RudaDimResource, MatmulSetupError> {
+        Ok(RudaDimResource::Planes(blueprint.num_planes as u32))
     }
 
     fn validate_blueprint<R: Runtime>(

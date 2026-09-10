@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::components::global::{
@@ -31,11 +31,11 @@ use ruda_kernel::tiling::{InvalidConfigError, tile::Strided};
 
 use super::{LoadingJob, LoadingValidation, ReaderMode};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using all planes.
 /// Unit with pos X loads vectors with indices X, X + NUM_UNITS, X + 2 * NUM_UNITS, ...
 pub struct AsyncFullCyclicLoading<T: TilingOrder> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     _t: PhantomData<T>,
 }
 
@@ -103,7 +103,7 @@ impl<TO: TilingOrder> LoadMaxRoundPlaneCount for AsyncFullCyclicLoading<TO> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullCyclicLoading<TO> {
     type TilingLayout = ContiguousTilingLayout<TO>;
     type SyncStrategy = AsyncCopy;
@@ -145,27 +145,27 @@ impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for AsyncFullCy
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncFullCyclicJob {
     unit_position_base: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     tile_num_elements: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     jump_length: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     copy_vector_size: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     balanced_workload: bool,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_stage_elements: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     reader_mode: ReaderMode,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     LoadingJob<EG, NG, ES, NS, ContiguousTilingLayout<TO>, AsyncCopy> for AsyncFullCyclicJob
 {
@@ -196,7 +196,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     }
 }
 
-#[cube]
+#[ruda]
 pub(crate) fn copy_vector<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>(
     job: &AsyncFullCyclicJob,
     unit_position: u32,

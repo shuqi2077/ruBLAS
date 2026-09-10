@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::{
     global::SharedGlobalMatmulConfig,
     stage::{StageConfig, StridedStageFamily},
@@ -30,7 +30,7 @@ use ruda_kernel::tiling::{
 
 use super::{LoadingJob, LoadingValidation};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Loads the content of all tiles in the stage using TMA load instructions.
 /// Uses special tiling to minimize the number of loads required. Issues one load for each
 /// tile in the major dimension (i.e. `k` for col-major RHS).
@@ -69,7 +69,7 @@ impl LoadMaxRoundPlaneCount for AsyncPartialTmaLoading {
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> PartialLoadingStrategy<RC> for AsyncPartialTmaLoading {
     type TilingLayout = TmaTilingLayout;
     type SyncStrategy = AsyncTma;
@@ -106,17 +106,17 @@ impl<RC: RuntimeConfig> PartialLoadingStrategy<RC> for AsyncPartialTmaLoading {
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct AsyncPartialTmaJob {
     is_elected: bool,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     num_tasks: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_index: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     LoadingJob<EG, NG, ES, NS, TmaTilingLayout, AsyncTma> for AsyncPartialTmaJob
 {
@@ -177,7 +177,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size>
     }
 }
 
-#[cube]
+#[ruda]
 impl<RC: RuntimeConfig> AsyncPartialLoadingStrategy<RC> for AsyncPartialTmaLoading {
     fn arrival_count<S: StageConfig>(#[comptime] _config: SharedGlobalMatmulConfig<S>) -> u32 {
         1u32.runtime()

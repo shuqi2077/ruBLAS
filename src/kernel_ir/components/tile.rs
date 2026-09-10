@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::definition::{
     MatmulAvailabilityError, MatmulElems, MatmulSetupError, MatmulVectorSizes, StageIdent,
     TilingBlueprint,
@@ -12,7 +12,7 @@ use ruda_kernel::dsl::ir::FloatKind;
 use ruda_kernel::dsl::ir::StorageType;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::tiling::{
-    CubeDimResource, InvalidConfigError, MatrixLayout, TileSize,
+    RudaDimResource, InvalidConfigError, MatrixLayout, TileSize,
     stage::SwizzleMode,
     tile::{
         CmmaMatmul, InterleavedMatmul, MmaIOConfig, MmaMatmul, Plane, PlaneVecMatInnerProduct,
@@ -159,7 +159,7 @@ impl TileMatmulKind {
     }
 
     /// Returns the compute resources required to run this matmul.
-    pub fn cubedim_resource(&self) -> Result<CubeDimResource, InvalidConfigError> {
+    pub fn rudadim_resource(&self) -> Result<RudaDimResource, InvalidConfigError> {
         Ok(match self {
             TileMatmulKind::Cmma
             | TileMatmulKind::Mma

@@ -1,18 +1,18 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::layout::*;
 
 use crate::kernel_ir::launch::BatchedCoords;
 
 /// Slice the layout at a specific batch, and reduce its dimensionality
-/// Not general enough to be in cubecl-std
-#[derive(CubeType, Clone, Copy)]
+/// Not general enough to be in ruda-kernel
+#[derive(RudaType, Clone, Copy)]
 pub struct SliceIndex {
     offset: usize,
     shape: Coords2d,
 }
 
-#[cube]
+#[ruda]
 impl SliceIndex {
     pub fn new(offset: usize, shape: BatchedCoords) -> Self {
         let (_, rows, cols) = shape;
@@ -23,7 +23,7 @@ impl SliceIndex {
     }
 }
 
-#[cube]
+#[ruda]
 impl Layout for SliceIndex {
     type Coordinates = Coords2d;
     type SourceCoordinates = (usize, u32, u32);

@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::components::{
     global::multi_stage::double_buffer_execution::{
         execute_current_and_read_next, execute_last_and_write_results, read_first,
@@ -49,7 +49,7 @@ pub struct OrderedDoubleBufferingMatmul<
     _writer: PhantomData<GW>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes, SMM, RC, RL, AL, GW> global::GlobalMatmul<RC, MP>
     for OrderedDoubleBufferingMatmul<MP, SMM, RC, RL, AL, GW>
 where
@@ -144,7 +144,7 @@ where
 
         let acc_stage = acc_reader.map(|mut reader| {
             reader.load_stage(&mut barrier, config.acc_reader_config);
-            sync_cube();
+            sync_ruda();
             reader.stage()
         });
 
@@ -179,7 +179,7 @@ where
 
         lhs_reader.advance_view();
 
-        sync_cube();
+        sync_ruda();
 
         for _ in 0..num_loops {
             execute_current_and_read_next::<
@@ -207,7 +207,7 @@ where
             lhs_reader.advance_view();
             rhs_reader.advance_view();
 
-            sync_cube();
+            sync_ruda();
 
             execute_current_and_read_next::<
                 MP,
@@ -233,7 +233,7 @@ where
 
             lhs_reader.advance_view();
 
-            sync_cube();
+            sync_ruda();
         }
 
         execute_current_and_read_next::<
@@ -258,7 +258,7 @@ where
             config,
         );
 
-        sync_cube();
+        sync_ruda();
 
         execute_last_and_write_results::<MP, GW, SMM, Self::Config>(
             &lhs_stage,

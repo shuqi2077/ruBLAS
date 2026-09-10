@@ -1,11 +1,11 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::launch::{
     ConcreteInputsFactory, ConcreteOutputFactory, InputArg, InputRuntimeArg, MatmulArgs, OutputArg,
     OutputRuntimeArg,
 };
 use crate::kernel_ir::{
     definition::MatmulProblem, definition::MatmulSetupError, definition::MatmulVectorSizes,
-    definition::cube_mapping_launch,
+    definition::ruda_mapping_launch,
 };
 use crate::kernel_ir::{
     routines::LaunchInfo,
@@ -96,13 +96,13 @@ pub fn launch_kernel<MA: MatmulArgs, R: Runtime, A: Routine<MA::Config>>(
 ) -> Result<(), MatmulSetupError> {
     A::launch::<MA, R>(
         client,
-        launch_info.cube_dim,
-        launch_info.cube_count_plan.resolve(),
+        launch_info.ruda_dim,
+        launch_info.ruda_count_plan.resolve(),
         launch_info.address_type,
         input,
         output,
         config,
-        cube_mapping_launch(&launch_info.cube_count_plan),
+        ruda_mapping_launch(&launch_info.ruda_count_plan),
         launch_info.blueprint,
         &launch_info.dtypes,
         &launch_info.vector_sizes,

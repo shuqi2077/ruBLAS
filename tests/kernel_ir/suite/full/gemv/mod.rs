@@ -1,6 +1,6 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::{suite::assert_result, suite::test_matmul_strategy};
-use ruda_kernel::dsl::frontend::CubePrimitive;
+use ruda_kernel::dsl::frontend::RudaPrimitive;
 use ruda_kernel::dsl::ir::AddressType;
 use ruda_kernel::library::tensor::TensorHandle;
 use ruda_kernel::dsl::Runtime;

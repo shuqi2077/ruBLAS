@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use super::fragments::{Accumulators, RhsTile, RhsTileExpand};
@@ -90,7 +90,7 @@ pub struct PartitionMatmul<
     _phantom: PhantomData<(MP, StageLhs, StageRhs, StageAcc, Sc)>,
 }
 
-#[cube]
+#[ruda]
 impl<MT, StageLhs, StageRhs, StageAcc, Sc> PartitionMatmul<MT, StageLhs, StageRhs, StageAcc, Sc>
 where
     MT: MatmulTypes,
@@ -458,7 +458,7 @@ where
     }
 }
 
-#[cube]
+#[ruda]
 fn allocate_lhs<MT: MatmulTypes, Sc: TileScope>(
     #[comptime] layout: ruda_kernel::tiling::MatrixLayout,
     #[comptime] tile_matmul: TileMatmul,
@@ -472,7 +472,7 @@ fn allocate_lhs<MT: MatmulTypes, Sc: TileScope>(
     }
 }
 
-#[cube]
+#[ruda]
 fn allocate_rhs<MT: MatmulTypes, Sc: TileScope>(
     #[comptime] layout: ruda_kernel::tiling::MatrixLayout,
     #[comptime] config: TileMatmul,

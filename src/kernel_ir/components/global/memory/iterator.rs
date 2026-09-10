@@ -1,25 +1,25 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 use ruda_kernel::library::tensor::View;
 use ruda_kernel::library::tensor::layout::Coords2d;
 
-#[derive(Clone, CubeType)]
+#[derive(Clone, RudaType)]
 /// An iterator over global memory, advancing along k.
-pub struct GlobalIterator<EI: CubePrimitive> {
+pub struct GlobalIterator<EI: RudaPrimitive> {
     global_view: View<EI, Coords2d>,
     offset: RuntimeCell<u32>,
     /// The amount to advance by on each iteration
     step: u32,
     first_step: RuntimeCell<u32>,
     view_size: Coords2d,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     view_direction: ViewDirection,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     checked: bool,
 }
 
-unsafe impl<EG: CubePrimitive> Sync for GlobalIterator<EG> {}
-unsafe impl<EG: CubePrimitive> Send for GlobalIterator<EG> {}
+unsafe impl<EG: RudaPrimitive> Sync for GlobalIterator<EG> {}
+unsafe impl<EG: RudaPrimitive> Send for GlobalIterator<EG> {}
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Default)]
 pub enum ViewDirection {
@@ -30,8 +30,8 @@ pub enum ViewDirection {
     None,
 }
 
-#[cube]
-impl<EG: CubePrimitive> GlobalIterator<EG> {
+#[ruda]
+impl<EG: RudaPrimitive> GlobalIterator<EG> {
     /// Instantiate a read iterator over the given global view, which should be sliced to the size
     /// of one `m`/`n` stage and the full range of `k` handled by this matmul instance.
     ///

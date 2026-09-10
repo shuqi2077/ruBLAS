@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use crate::kernel_ir::launch::RuntimeConfig;
 use crate::kernel_ir::{
     components::{
@@ -33,7 +33,7 @@ pub struct SimpleMatmul<
     _phantom: PhantomData<(MP, SMM, RC, LL, RL, AL, GW)>,
 }
 
-#[cube]
+#[ruda]
 impl<MP: MatmulTypes, SMM, RC, LL, RL, AL, GW, const FIRST_K_TILE: u32> GlobalMatmul<RC, MP>
     for SimpleMatmul<MP, SMM, RC, LL, RL, AL, GW, FIRST_K_TILE>
 where
@@ -142,7 +142,7 @@ where
         let rhs_stage = &rhs_reader.stage();
 
         for _ in 0..num_loops {
-            sync_cube();
+            sync_ruda();
 
             lhs_reader.load_stage(&mut barrier, config.lhs_reader_config);
             rhs_reader.load_stage(&mut barrier, config.rhs_reader_config);
@@ -164,13 +164,13 @@ where
         }
 
         // Frees input stages for reuse, so the output stage can be allocated into the same
-        // range. The `sync_cube` is required to ensure other planes are done reading from the stages.
+        // range. The `sync_ruda` is required to ensure other planes are done reading from the stages.
         //
         // This is currently very unintuitive, because while the stage already exists, it actually
         // isn't allocated until it's used (by writing to it). We should eventually separate the
         // write call into a different function and defer creating the writer until after the stages
         // are freed to make the order of operations more clear.
-        sync_cube();
+        sync_ruda();
         lhs_reader.free_stage();
         rhs_reader.free_stage();
 

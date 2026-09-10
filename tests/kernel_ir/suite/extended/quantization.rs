@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::Runtime;
 use ruda_test_runtime::TestRuntime;
 use ruda_kernel::dsl::ir::features::TypeUsage;

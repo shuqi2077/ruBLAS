@@ -5,7 +5,7 @@ use ruda_core::{
     tensor::{DType, Shape},
 };
 use ruda_kernel::{
-    dsl::{Runtime, calculate_cube_count_elemwise, prelude::CubeDim},
+    dsl::{Runtime, calculate_ruda_count_elemwise, prelude::RudaDim},
     tensor::{RudaTensor, allocation::empty_device_contiguous_dtype, contiguous::into_contiguous},
 };
 use std::fmt;
@@ -80,10 +80,10 @@ pub fn grouped_matmul_nt<R: Runtime>(
         let input = into_contiguous(input);
         let weights = into_contiguous(weights);
         let row_experts = into_contiguous(row_experts);
-        let dim = CubeDim::new(input.client.properties(), m * n);
+        let dim = RudaDim::new(input.client.properties(), m * n);
         kernel::grouped_nt::launch::<R>(
             &input.client,
-            calculate_cube_count_elemwise(&input.client, m * n, dim),
+            calculate_ruda_count_elemwise(&input.client, m * n, dim),
             dim,
             input.clone().into_array_arg(),
             weights.into_array_arg(),

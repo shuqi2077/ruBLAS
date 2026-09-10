@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use ruda_kernel::dsl::prelude::*;
 
 use crate::kernel_ir::{
@@ -16,7 +16,7 @@ pub enum EventLoadingMode {
     Ordered,
 }
 
-#[derive(CubeType)]
+#[derive(RudaType)]
 /// Injects Lhs and Rhs loading tasks during stage matmul execution, as part of double buffering.
 ///
 /// This comptime struct implements `on_event`, which is called from within the stage matmul.
@@ -28,18 +28,18 @@ pub struct DoubleBufferingEventListener<
     Rhs: JobExecutor<S>,
     G: GlobalConfig,
 > {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     stage_buffer: StageBuffer,
     reader_lhs: Lhs,
     reader_rhs: Rhs,
     barrier: S::Barrier,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     config: G,
     state_lhs: Sequence<Lhs::JobIterator>,
     state_rhs: Sequence<Rhs::JobIterator>,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     event_loading_side: LoadingSides,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     must_sync_plane_after_execution: bool,
 }
 
@@ -53,7 +53,7 @@ struct IdentEventAnalysis {
     /// If no more tasks need to be executed .
     completed: bool,
 }
-impl CubeDebug for IdentEventAnalysis {}
+impl RudaDebug for IdentEventAnalysis {}
 impl IdentEventAnalysis {
     fn should_execute(&self, current: u32) -> bool {
         self.counter == current && self.can_start && !self.completed
@@ -66,9 +66,9 @@ struct EventAnalysis {
     lhs: IdentEventAnalysis,
     rhs: IdentEventAnalysis,
 }
-impl CubeDebug for EventAnalysis {}
+impl RudaDebug for EventAnalysis {}
 
-#[cube]
+#[ruda]
 impl<S: SyncStrategy, Lhs: JobExecutor<S>, Rhs: JobExecutor<S>, G: GlobalConfig>
     DoubleBufferingEventListener<S, Lhs, Rhs, G>
 {
@@ -95,7 +95,7 @@ impl<S: SyncStrategy, Lhs: JobExecutor<S>, Rhs: JobExecutor<S>, G: GlobalConfig>
     }
 }
 
-#[cube]
+#[ruda]
 impl<S: SyncStrategy, L: JobExecutor<S>, R: JobExecutor<S>, G: GlobalConfig> StageEventListener
     for DoubleBufferingEventListener<S, L, R, G>
 {
@@ -213,7 +213,7 @@ impl<S: SyncStrategy, L: JobExecutor<S>, R: JobExecutor<S>, G: GlobalConfig> Sta
     }
 }
 
-#[cube]
+#[ruda]
 impl<S: SyncStrategy, L: JobExecutor<S>, R: JobExecutor<S>, G: GlobalConfig>
     DoubleBufferingEventListener<S, L, R, G>
 {
@@ -297,9 +297,9 @@ impl<S: SyncStrategy, L: JobExecutor<S>, R: JobExecutor<S>, G: GlobalConfig>
     }
 }
 
-#[cube]
+#[ruda]
 /// Something that can execute a job, i.e. a reader
-pub trait JobExecutor<S: SyncStrategy>: CubeType + Clone {
+pub trait JobExecutor<S: SyncStrategy>: RudaType + Clone {
     /// The job to execute
     type JobIterator: JobIterator;
 
@@ -335,9 +335,9 @@ pub trait JobExecutor<S: SyncStrategy>: CubeType + Clone {
     );
 }
 
-#[cube]
+#[ruda]
 /// An iterator over a sequence of tasks
-pub trait JobIterator: CubeType {
+pub trait JobIterator: RudaType {
     /// Get the index of the current task
     fn current(this: &Self) -> comptime_type!(u32);
 

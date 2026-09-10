@@ -1,4 +1,4 @@
-use ruda_kernel::dsl as cubecl;
+use ruda_kernel::dsl as kernel_dsl;
 use std::marker::PhantomData;
 
 use crate::kernel_ir::{
@@ -22,7 +22,7 @@ use ruda_kernel::tiling::{
 
 use super::{LoadingJob, LoadingValidation};
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 /// Each tile is guaranteed to be loaded entirely by the same plane.
 /// Each plane can load multiple tiles, provided the number of planes evenly divides the number of tiles.
 /// In this case, a plane loads contiguous tiles following the TilingOrder.
@@ -32,7 +32,7 @@ use super::{LoadingJob, LoadingValidation};
 /// In multi-row, number of planes must divide number of rows,
 /// and each plane loads a contiguous chunk of rows (e.g. plane 0 loads rows 0–1, plane 1 loads 2–3, etc.).
 pub struct SyncFullTilewiseLoading<T: TilingOrder> {
-    #[cube(comptime)]
+    #[ruda(comptime)]
     tiling_order: PhantomData<T>,
 }
 
@@ -93,7 +93,7 @@ impl<T: TilingOrder> LoadingValidation for SyncFullTilewiseLoading<T> {
     }
 }
 
-#[cube]
+#[ruda]
 impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for SyncFullTilewiseLoading<TO> {
     type TilingLayout = ContiguousTilingLayout<TO>;
     type SyncStrategy = Synchronous;
@@ -129,20 +129,20 @@ impl<TO: TilingOrder, RC: RuntimeConfig> FullLoadingStrategy<RC> for SyncFullTil
     }
 }
 
-#[derive(CubeType, Clone, Copy)]
+#[derive(RudaType, Clone, Copy)]
 pub struct SyncFullTilewiseJob {
     pub num_tiles_to_skip: u32,
     pub num_vectors_to_skip: u32,
 
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub num_vectors_per_tile: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub num_vectors_per_unit: u32,
-    #[cube(comptime)]
+    #[ruda(comptime)]
     pub plane_dim: u32,
 }
 
-#[cube]
+#[ruda]
 impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     LoadingJob<EG, NG, ES, NS, ContiguousTilingLayout<TO>, Synchronous> for SyncFullTilewiseJob
 {
@@ -179,7 +179,7 @@ impl<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>
     }
 }
 
-#[cube]
+#[ruda]
 impl SyncFullTilewiseJob {
     #[allow(clippy::too_many_arguments)]
     fn load_and_store_vector<EG: Numeric, NG: Size, ES: Numeric, NS: Size, TO: TilingOrder>(
