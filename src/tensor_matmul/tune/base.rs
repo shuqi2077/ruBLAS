@@ -48,15 +48,20 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
     f32_math: F32MathMode,
 ) -> RudaTensor<R> {
     let output = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
+    let search_eligible = super::super::gemv_search_ordered_width(&lhs, &rhs, &output).is_ok();
 
     let client = lhs.client.clone();
     let num_cpu_cores = client.properties().hardware.num_cpu_cores;
 
     static STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::strict_f32::v1");
     static TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::allow_tf32::v1");
-    let tuner = match f32_math {
-        F32MathMode::Strict => &STRICT_TUNER,
-        F32MathMode::AllowTf32 => &TF32_TUNER,
+    static GEMV_STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_ordered::strict_f32::v1");
+    static GEMV_TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_ordered::allow_tf32::v1");
+    let tuner = match (f32_math, search_eligible) {
+        (F32MathMode::Strict, false) => &STRICT_TUNER,
+        (F32MathMode::AllowTf32, false) => &TF32_TUNER,
+        (F32MathMode::Strict, true) => &GEMV_STRICT_TUNER,
+        (F32MathMode::AllowTf32, true) => &GEMV_TF32_TUNER,
     };
 
     let tune_id = RudaTuneId::new(&lhs.client, &lhs.device);
@@ -199,6 +204,18 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
                 }
             }),
         );
+
+        if search_eligible {
+            for warps in [4, 8, 16] {
+                set = set.with(
+                    Tunable::new(&format!("gemv_nt_ordered_w{warps}"), move |(lhs, rhs, out): (RudaTensor<R>, RudaTensor<R>, RudaTensor<R>)| {
+                        super::super::launch_gemv_search_ordered(lhs, rhs, out.clone(), warps)
+                            .map(|()| out)
+                            .map_err(|err| format!("{err:?}"))
+                    }).group(&gemv, |_| PRIORITY_MAX),
+                );
+            }
+        }
 
         // Matrix Vector multiplication kernels.
         for (strategy, double_buf) in [
