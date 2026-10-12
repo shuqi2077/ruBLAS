@@ -1,4 +1,4 @@
-use super::{AwqGemmLayout,Int4Error,grouped_kernel};
+use super::{AwqGemmLayout,Int4Error,grouped_kernel,tune};
 use ruda_core::{device::Device,tensor::{DType,Shape}};
 use ruda_kernel::{dsl::{Runtime,calculate_ruda_count_elemwise,prelude::RudaDim},
     tensor::{RudaTensor,allocation::empty_device_contiguous_dtype,contiguous::into_contiguous}};
@@ -61,10 +61,11 @@ impl<R:Runtime> AwqGroupedGemm<R> {
         if backward {grouped_kernel::input_backward::launch::<R>(&input.client,calculate_ruda_count_elemwise(&input.client,size,dim),dim,
             input.clone().into_array_arg(),self.qweight.clone().into_array_arg(),self.qzeros.clone().into_array_arg(),self.scales.clone().into_array_arg(),
             ids.into_array_arg(),output.clone().into_array_arg(),self.experts as u32,k as u32,n as u32,self.layout.group_size as u32,input.dtype.into(),self.scales.dtype.into());}
-        else {grouped_kernel::forward::launch::<R>(&input.client,calculate_ruda_count_elemwise(&input.client,size,dim),dim,
-            input.clone().into_array_arg(),self.qweight.clone().into_array_arg(),self.qzeros.clone().into_array_arg(),self.scales.clone().into_array_arg(),
-            self.bias.as_ref().unwrap_or(&self.scales).clone().into_array_arg(),ids.into_array_arg(),output.clone().into_array_arg(),
-            self.experts as u32,k as u32,n as u32,self.layout.group_size as u32,u32::from(self.bias.is_some()),input.dtype.into(),self.scales.dtype.into());}
+        else {return Ok(tune::forward(tune::ForwardArgs {
+            input, qweight:self.qweight.clone(), qzeros:self.qzeros.clone(),
+            scales:self.scales.clone(), bias:self.bias.clone(), output,
+            layout:self.layout, experts:self.experts, ids:Some(ids),
+        }));}
         Ok(output)
     }
 }

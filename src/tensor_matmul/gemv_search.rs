@@ -15,6 +15,7 @@ fn gemv_search_eligible<R: Runtime>(
     lhs: &RudaTensor<R>,
     rhs: &RudaTensor<R>,
     out: &RudaTensor<R>,
+    direct_nt: bool,
 ) -> bool {
     let tensors = [lhs, rhs, out];
     for tensor in tensors {
@@ -56,6 +57,18 @@ fn gemv_search_eligible<R: Runtime>(
     let a = lhs.meta.shape();
     let b = rhs.meta.shape();
     let c = out.meta.shape();
+    if !direct_nt {
+        let output_id = out.handle.memory.clone().binding().id();
+        let output_begin = out.handle.offset_start.unwrap_or(0);
+        let output_end = out.handle.size() - out.handle.offset_end.unwrap_or(0);
+        for input in [lhs, rhs] {
+            if input.handle.memory.clone().binding().id() == output_id {
+                let input_begin = input.handle.offset_start.unwrap_or(0);
+                let input_end = input.handle.size() - input.handle.offset_end.unwrap_or(0);
+                if input_begin < output_end && output_begin < input_end { return false; }
+            }
+        }
+    }
     let k = a[a.len() - 1];
     let n = b[b.len() - 1];
     let props = &lhs.client.properties().hardware;
@@ -67,9 +80,9 @@ fn gemv_search_eligible<R: Runtime>(
         && k <= (u32::MAX - 127) as usize
         && n != 0
         && n.div_ceil(4) <= props.max_ruda_count.0 as usize
-        && lhs.meta.strides()[a.len() - 1] == 1
-        && rhs.meta.strides()[b.len() - 2] == 1
-        && rhs.meta.strides()[b.len() - 1] >= k
+        && (!direct_nt || (lhs.meta.strides()[a.len() - 1] == 1
+            && rhs.meta.strides()[b.len() - 2] == 1
+            && rhs.meta.strides()[b.len() - 1] >= k))
         && rhs.meta.strides()[b.len() - 1] <= u32::MAX as usize
         && out.meta.strides()[c.len() - 1] != 0
         && out.meta.strides()[c.len() - 1] <= u32::MAX as usize
@@ -129,7 +142,7 @@ pub fn gemv_search_ordered_width<R: Runtime>(
     rhs: &RudaTensor<R>,
     out: &RudaTensor<R>,
 ) -> Result<u32, MatmulSetupError> {
-    if !gemv_search_eligible(lhs, rhs, out)
+    if !gemv_search_eligible(lhs, rhs, out, true)
         || MatrixLayout::from_shape_and_strides(out.meta.shape(), out.meta.strides(), None).is_err()
         || lhs.meta.shape().len() != rhs.meta.shape().len()
         || lhs.meta.shape().len() != out.meta.shape().len()
@@ -202,4 +215,111 @@ pub fn launch_gemv_search_ordered<R: Runtime>(
         DType::BF16.into(),
     );
     Ok(())
+}
+
+pub fn gemv_fused_ordered_width<R: Runtime>(
+    lhs: &RudaTensor<R>, rhs: &RudaTensor<R>, out: &RudaTensor<R>,
+) -> Result<u32, MatmulSetupError> {
+    if !gemv_search_eligible(lhs, rhs, out, false)
+        || lhs.meta.num_dims() != rhs.meta.num_dims()
+        || lhs.meta.num_dims() != out.meta.num_dims()
+        || MatrixLayout::from_shape_and_strides(out.meta.shape(), out.meta.strides(), None).is_err()
+    {
+        return Err(invalid("fused ordered GEMV requires matching singleton batches and bounded BF16 views"));
+    }
+    // Match the naive reference's vector width AFTER its optional copies,
+    // while this kernel reads the original views without materializing them.
+    let rank = lhs.meta.num_dims();
+    let mut lhs_strides = lhs.meta.strides().clone();
+    if matches!(matrix_batch_layout(&lhs_strides, None), MatrixBatchLayout::Contiguous)
+        && MatrixLayout::from_shape_and_strides(lhs.meta.shape(), &lhs_strides, None).is_err()
+    {
+        return Err(invalid("fused GEMV cannot bypass the naive reference's invalid lhs binding"));
+    }
+    if !matches!(matrix_batch_layout(&lhs_strides, None), MatrixBatchLayout::Contiguous) {
+        let mut stride = 1usize;
+        for axis in (0..rank).rev() {
+            lhs_strides[axis] = stride;
+            stride = stride.checked_mul(lhs.meta.shape()[axis]).ok_or_else(|| invalid("lhs relayout span overflow"))?;
+        }
+    }
+    let mut rhs_strides = rhs.meta.strides().clone();
+    if matches!(matrix_batch_layout(&rhs_strides, None), MatrixBatchLayout::MildlyPermuted { transposed: true, batch_swap: false })
+        && MatrixLayout::from_shape_and_strides(rhs.meta.shape(), &rhs_strides, None).is_err()
+    {
+        return Err(invalid("fused GEMV cannot bypass the naive reference's invalid rhs binding"));
+    }
+    if !matches!(matrix_batch_layout(&rhs_strides, None), MatrixBatchLayout::MildlyPermuted { transposed: true, batch_swap: false }) {
+        rhs_strides[rank - 2] = 1;
+        rhs_strides[rank - 1] = rhs.meta.shape()[rank - 2];
+        let mut stride = rhs.meta.shape()[rank - 2].checked_mul(rhs.meta.shape()[rank - 1])
+            .ok_or_else(|| invalid("rhs relayout span overflow"))?;
+        for axis in (0..rank - 2).rev() {
+            rhs_strides[axis] = stride;
+            stride = stride.checked_mul(rhs.meta.shape()[axis]).ok_or_else(|| invalid("rhs relayout span overflow"))?;
+        }
+    }
+    let lhs_width = tensor_vector_size_parallel(lhs.client.io_optimized_vector_sizes(lhs.dtype.size()), lhs.meta.shape(), &lhs_strides, rank - 1);
+    let rhs_width = tensor_vector_size_parallel(lhs.client.io_optimized_vector_sizes(rhs.dtype.size()), rhs.meta.shape(), &rhs_strides, rank - 2);
+    let width = lhs_width.max(rhs_width);
+    if !matches!(width, 1 | 2 | 4 | 8 | 16 | 32) {
+        return Err(invalid("naive vector width cannot fit an ordered subwarp"));
+    }
+    Ok(width as u32)
+}
+
+#[ruda(launch)]
+fn warp_strided_ordered<F: Float>(
+    lhs: &Tensor<F>, rhs: &Tensor<F>, out: &mut Tensor<F>,
+    k: u32, n: u32, lhs_stride: u32, rhs_k_stride: u32, rhs_column_stride: u32, out_stride: u32,
+    #[comptime] warps: u32, #[comptime] reference_width: u32,
+    #[define(F)] _dtype: StorageType,
+) {
+    let lane = UNIT_POS_X;
+    let group = lane / reference_width;
+    let component = lane % reference_width;
+    let group_base = group * reference_width;
+    let column = (RUDA_POS_X * warps + UNIT_POS_Y) * (32 / reference_width) + group;
+    let mut acc = 0.0f32;
+    let mut base = 0u32;
+    while base < k {
+        let position = base + component;
+        if column < n && position < k {
+            let left = f32::cast_from(lhs[(position * lhs_stride) as usize]);
+            let right = f32::cast_from(rhs[(column * rhs_column_stride + position * rhs_k_stride) as usize]);
+            acc = fma(left, right, acc);
+        }
+        base += reference_width;
+    }
+    if comptime!(reference_width == 1) {
+        if column < n { out[(column * out_stride) as usize] = F::cast_from(acc); }
+    } else {
+        let mut sum = 0.0f32;
+        #[unroll]
+        for value in 0u32..reference_width { sum += plane_shuffle(acc, group_base + value); }
+        if component == 0 && column < n { out[(column * out_stride) as usize] = F::cast_from(sum); }
+    }
+}
+
+pub fn launch_gemv_fused_ordered<R: Runtime>(
+    lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>, warps: u32,
+) -> Result<(), MatmulSetupError> {
+    if !matches!(warps, 4 | 8 | 16) { return Err(invalid("unsupported fused GEMV warp count")); }
+    let width = gemv_fused_ordered_width(&lhs, &rhs, &out)?;
+    let rank = lhs.meta.num_dims();
+    let k = lhs.meta.shape()[rank - 1] as u32;
+    let n = rhs.meta.shape()[rank - 1] as u32;
+    warp_strided_ordered::launch::<R>(&lhs.client,
+        RudaCount::Static(n.div_ceil(warps * (32 / width)), 1, 1), RudaDim::new_2d(32, warps),
+        lhs.clone().into_tensor_arg(), rhs.clone().into_tensor_arg(), out.clone().into_tensor_arg(),
+        k, n, lhs.meta.strides()[rank - 1] as u32, rhs.meta.strides()[rank - 2] as u32,
+        rhs.meta.strides()[rank - 1] as u32, out.meta.strides()[rank - 1] as u32,
+        warps, width, DType::BF16.into());
+    Ok(())
+}
+
+pub fn launch_gemv_validated_ordered<R: Runtime>(
+    lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>, warps: u32,
+) -> Result<(), MatmulSetupError> {
+    crate::kernel_ir::routines::gemv_ordered::launch(lhs, rhs, out, warps)
 }

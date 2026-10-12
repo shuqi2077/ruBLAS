@@ -1,6 +1,8 @@
 mod kernel;
 mod grouped;
 mod grouped_kernel;
+mod tiled_kernel;
+mod tune;
 pub use grouped::AwqGroupedGemm;
 
 use ruda_core::device::Device;
@@ -191,56 +193,25 @@ impl<R: Runtime> AwqGemm<R> {
             return Ok(output);
         }
         let input = into_contiguous(input);
-        let ruda_dim = RudaDim::new(input.client.properties(), elements);
-        kernel::awq_gemm::launch::<R>(
-            &input.client,
-            calculate_ruda_count_elemwise(&input.client, elements, ruda_dim),
-            ruda_dim,
-            input.clone().into_array_arg(),
-            self.qweight.clone().into_array_arg(),
-            self.qzeros.clone().into_array_arg(),
-            self.scales.clone().into_array_arg(),
-            self.bias
-                .as_ref()
-                .unwrap_or(&self.scales)
-                .clone()
-                .into_array_arg(),
-            output.clone().into_array_arg(),
-            k as u32,
-            n as u32,
-            self.layout.group_size as u32,
-            u32::from(self.bias.is_some()),
-            input.dtype.into(),
-        );
-        Ok(output)
+        Ok(tune::forward(tune::ForwardArgs {
+            input, qweight: self.qweight.clone(), qzeros: self.qzeros.clone(),
+            scales: self.scales.clone(), bias: self.bias.clone(), output,
+            layout: self.layout, experts: 1, ids: None,
+        }))
     }
 
     /// Forward retaining activation storage independently from the original AWQ
     /// scale storage. Weight coefficients still round to the original scale dtype.
-    /// Matching dtypes use the original forward kernel and rounding path.
+    /// Matching dtypes use the same-storage forward and rounding path.
     pub fn forward_with_input_dtype(&self, input: RudaTensor<R>) -> Result<RudaTensor<R>, Int4Error> {
         if input.dtype == self.scales.dtype { return self.forward(input); }
         let (input, output, elements) = self.prepare_projection(input, false)?;
         if elements == 0 { return Ok(output); }
-        let dim = RudaDim::new(input.client.properties(), elements);
-        kernel::awq_gemm_mixed::launch::<R>(
-            &input.client,
-            calculate_ruda_count_elemwise(&input.client, elements, dim),
-            dim,
-            input.clone().into_array_arg(),
-            self.qweight.clone().into_array_arg(),
-            self.qzeros.clone().into_array_arg(),
-            self.scales.clone().into_array_arg(),
-            self.bias.as_ref().unwrap_or(&self.scales).clone().into_array_arg(),
-            output.clone().into_array_arg(),
-            self.layout.input_features as u32,
-            self.layout.output_features as u32,
-            self.layout.group_size as u32,
-            u32::from(self.bias.is_some()),
-            input.dtype.into(),
-            self.scales.dtype.into(),
-        );
-        Ok(output)
+        Ok(tune::forward(tune::ForwardArgs {
+            input, qweight: self.qweight.clone(), qzeros: self.qzeros.clone(),
+            scales: self.scales.clone(), bias: self.bias.clone(), output,
+            layout: self.layout, experts: 1, ids: None,
+        }))
     }
 
     /// Apply the transpose of the original rounded AWQ weight to an output

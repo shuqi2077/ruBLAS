@@ -10,6 +10,7 @@ repository = "https://github.com/shuqi2077/RUDA"
 cann = ["dep:ruda-driver-cann"]
 default = ["kernel-ir", "std"]
 tensor-int4 = ["kernel-ir", "ruda-kernel/device-tensor"]
+tensor-int4-autotune = ["tensor-int4"]
 tensor-nf4 = ["tensor-matmul", "ruda-kernel/device-tensor"]
 tensor-matmul = ["kernel-ir", "ruda-kernel/device-tensor-dequantize"]
 tensor-grouped = ["kernel-ir", "ruda-kernel/device-tensor"]
@@ -23,9 +24,9 @@ extended = ["heavy"]
 full = ["extended"]
 
 [dependencies]
-ruda-driver-cann = { version = "0.1.88", path = "../ruda-driver-cann", optional = true }
-ruda-kernel = { version = "0.1.38", path = "../ruda-kernel", default-features = false }
-ruda = { version = "0.1.39", path = "../ruda", default-features = false }
+ruda-driver-cann = { version = "0.1.90", path = "../ruda-driver-cann", optional = true }
+ruda-kernel = { version = "0.1.39", path = "../ruda-kernel", default-features = false }
+ruda = { version = "0.1.40", path = "../ruda", default-features = false }
 half = { version = "=2.7.1", features = ["alloc", "num-traits", "serde", "bytemuck"] }
 
 [lints.rust]
@@ -43,7 +44,7 @@ optional = true
 
 [dependencies.ruda-test-utils]
 path = "../ruda-test-utils"
-version = "0.1.89"
+version = "0.1.90"
 default-features = false
 optional = true
 
@@ -73,6 +74,6 @@ required-features = ["kernel-ir", "cpu-reference"]
 
 [dependencies.ruda-core]
 path = "../ruda-core"
-version = "0.1.8"
+version = "0.1.9"
 default-features = false
 optional = true

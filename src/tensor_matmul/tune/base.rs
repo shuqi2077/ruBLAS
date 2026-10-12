@@ -49,6 +49,7 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
 ) -> RudaTensor<R> {
     let output = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
     let search_eligible = super::super::gemv_search_ordered_width(&lhs, &rhs, &output).is_ok();
+    let fused_eligible = super::super::gemv_fused_ordered_width(&lhs, &rhs, &output).is_ok();
 
     let client = lhs.client.clone();
     let num_cpu_cores = client.properties().hardware.num_cpu_cores;
@@ -57,11 +58,19 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
     static TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::allow_tf32::v1");
     static GEMV_STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_ordered::strict_f32::v1");
     static GEMV_TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_ordered::allow_tf32::v1");
-    let tuner = match (f32_math, search_eligible) {
-        (F32MathMode::Strict, false) => &STRICT_TUNER,
-        (F32MathMode::AllowTf32, false) => &TF32_TUNER,
-        (F32MathMode::Strict, true) => &GEMV_STRICT_TUNER,
-        (F32MathMode::AllowTf32, true) => &GEMV_TF32_TUNER,
+    static FUSED_GEMV_STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::fused_ordered::strict_f32::v4");
+    static FUSED_GEMV_TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::fused_ordered::allow_tf32::v4");
+    static VALIDATED_NT_STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_validated_ordered::strict_f32::v1");
+    static VALIDATED_NT_TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::nt_validated_ordered::allow_tf32::v1");
+    let tuner = match (f32_math, search_eligible, fused_eligible) {
+        (F32MathMode::Strict, true, true) => &VALIDATED_NT_STRICT_TUNER,
+        (F32MathMode::AllowTf32, true, true) => &VALIDATED_NT_TF32_TUNER,
+        (F32MathMode::Strict, false, true) => &FUSED_GEMV_STRICT_TUNER,
+        (F32MathMode::AllowTf32, false, true) => &FUSED_GEMV_TF32_TUNER,
+        (F32MathMode::Strict, false, false) => &STRICT_TUNER,
+        (F32MathMode::AllowTf32, false, false) => &TF32_TUNER,
+        (F32MathMode::Strict, true, false) => &GEMV_STRICT_TUNER,
+        (F32MathMode::AllowTf32, true, false) => &GEMV_TF32_TUNER,
     };
 
     let tune_id = RudaTuneId::new(&lhs.client, &lhs.device);
@@ -212,6 +221,24 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
                         super::super::launch_gemv_search_ordered(lhs, rhs, out.clone(), warps)
                             .map(|()| out)
                             .map_err(|err| format!("{err:?}"))
+                    }).group(&gemv, |_| PRIORITY_MAX),
+                );
+            }
+        }
+        if fused_eligible {
+            for warps in [4, 8, 16] {
+                set = set.with(
+                    Tunable::new(&format!("gemv_fused_ordered_w{warps}"), move |(lhs, rhs, out): (RudaTensor<R>, RudaTensor<R>, RudaTensor<R>)| {
+                        super::super::launch_gemv_fused_ordered(lhs, rhs, out.clone(), warps)
+                            .map(|()| out).map_err(|err| format!("{err:?}"))
+                    }).group(&gemv, |_| PRIORITY_MAX),
+                );
+            }
+            for warps in [4, 8, 16] {
+                set = set.with(
+                    Tunable::new(&format!("gemv_validated_ordered_w{warps}"), move |(lhs, rhs, out): (RudaTensor<R>, RudaTensor<R>, RudaTensor<R>)| {
+                        super::super::launch_gemv_validated_ordered(lhs, rhs, out.clone(), warps)
+                            .map(|()| out).map_err(|err| format!("{err:?}"))
                     }).group(&gemv, |_| PRIORITY_MAX),
                 );
             }
@@ -483,7 +510,7 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
             set = set.with(tunable);
         }
 
-        set
+        if fused_eligible { set.with_static_stack_plan() } else { set }
     });
 
     tuner.execute(

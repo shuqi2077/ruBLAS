@@ -16,5 +16,8 @@ pub mod vecmat_innerproduct;
 mod base;
 mod selector;
 
+#[cfg(feature = "tensor-matmul")]
+pub(crate) mod gemv_ordered;
+
 pub use base::*;
 pub use selector::*;
