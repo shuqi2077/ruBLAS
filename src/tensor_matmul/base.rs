@@ -70,7 +70,11 @@ pub fn matmul_with_precision<R: Runtime>(
         }
         MatmulStrategy::Ruda => {
             let out = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
-            launch_matmul_with_precision(&Default::default(), lhs, rhs, out.clone(), f32_math)?;
+            if lhs.dtype == DType::F64 {
+                launch_matmul_naive(&Strategy::Naive, lhs, rhs, out.clone())?;
+            } else {
+                launch_matmul_with_precision(&Default::default(), lhs, rhs, out.clone(), f32_math)?;
+            }
             Ok(out)
         }
         MatmulStrategy::Naive => {
