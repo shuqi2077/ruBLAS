@@ -1,4 +1,4 @@
-use super::{GroupedMatmulError, grouped_matmul_nt, tensorcore};
+use super::{GroupedMatmulError, grouped_matmul_nt_with_strategy, tensorcore};
 use ruda_core::{device::Device, tensor::{DType, Shape}, ir::{ElemType,FloatKind,features::MmaConfig}};
 use ruda_kernel::{dsl::{Runtime,prelude::{RudaCount,RudaDim}},tensor::{RudaTensor,allocation::empty_device_contiguous_dtype,contiguous::into_contiguous}};
 
@@ -19,7 +19,7 @@ pub unsafe fn grouped_matmul_nt_segmented<R: Runtime>(input: RudaTensor<R>, weig
     row_experts: RudaTensor<R>, offsets: RudaTensor<R>, strategy: GroupedStrategy)
     -> Result<RudaTensor<R>,GroupedMatmulError>
 {
-    if strategy==GroupedStrategy::Scalar { return grouped_matmul_nt(input,weights,row_experts); }
+    if strategy==GroupedStrategy::Scalar { return grouped_matmul_nt_with_strategy(input,weights,row_experts,GroupedStrategy::Scalar); }
     if input.meta.num_dims()!=2 || weights.meta.num_dims()!=3 {
         return Err(GroupedMatmulError("segmented GEMM requires [M,K] and [E,N,K]"));
     }
@@ -50,7 +50,7 @@ pub unsafe fn grouped_matmul_nt_segmented<R: Runtime>(input: RudaTensor<R>, weig
         && n.div_ceil(16)<=props.max_ruda_count.0 as usize && e<=props.max_ruda_count.1 as usize;
     if !supported {
         if strategy==GroupedStrategy::TensorCore { return Err(GroupedMatmulError("requested 16x16x16 Tensor Core configuration is unavailable")); }
-        return grouped_matmul_nt(input,weights,row_experts);
+        return grouped_matmul_nt_with_strategy(input,weights,row_experts,GroupedStrategy::Scalar);
     }
     let out=empty_device_contiguous_dtype(input.client.clone(),input.device.clone(),Shape::from([m,n]),input.dtype);
     if m!=0 {

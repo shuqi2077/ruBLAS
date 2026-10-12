@@ -4,6 +4,7 @@ mod backward_tensorcore;
 mod tests_backward;
 mod tensorcore;
 mod segmented;
+mod regroup;
 pub use segmented::{GroupedStrategy, grouped_matmul_nt_segmented};
 mod kernel;
 
@@ -30,11 +31,24 @@ impl std::error::Error for GroupedMatmulError {}
 
 /// Device-resident `[M,K] @ [E,N,K].mT`, selecting one expert per row.
 /// Group IDs outside `[0,E)` denote padding and produce zero rows.
-/// Scalar kernel: FP32 accumulation, one output rounding to the input dtype.
+/// Auto selects actual cooperative FP16/BF16 GEMM when supported. F32 and
+/// unsupported devices retain the scalar kernel. Accumulation is FP32 with one
+/// output rounding; cooperative reduction order can differ from scalar.
 pub fn grouped_matmul_nt<R: Runtime>(
     input: RudaTensor<R>,
     weights: RudaTensor<R>,
     row_experts: RudaTensor<R>,
+) -> Result<RudaTensor<R>, GroupedMatmulError> {
+    grouped_matmul_nt_with_strategy(input, weights, row_experts, GroupedStrategy::Auto)
+}
+
+/// An explicit TensorCore request errors if the 16x16x16 cooperative
+/// configuration or launch geometry is unsupported; it never silently falls
+/// back. Arbitrary row order is regrouped entirely on the device and restored
+/// after the expert GEMMs. Invalid expert IDs continue to produce zero rows.
+pub fn grouped_matmul_nt_with_strategy<R: Runtime>(
+    input: RudaTensor<R>, weights: RudaTensor<R>, row_experts: RudaTensor<R>,
+    strategy: GroupedStrategy,
 ) -> Result<RudaTensor<R>, GroupedMatmulError> {
     if input.meta.num_dims() != 2 || weights.meta.num_dims() != 3 {
         return Err(GroupedMatmulError(
@@ -62,7 +76,8 @@ pub fn grouped_matmul_nt<R: Runtime>(
         ));
     }
     for tensor in [&weights, &row_experts] {
-        if tensor.device.to_id() != input.device.to_id() {
+        if tensor.device.to_id() != input.device.to_id()
+            || !tensor.client.same_execution_queue(&input.client) {
             return Err(GroupedMatmulError(
                 "grouped matmul operands must share a device",
             ));
@@ -75,6 +90,15 @@ pub fn grouped_matmul_nt<R: Runtime>(
             .is_none_or(|size| size > u32::MAX as usize)
         {
             return Err(GroupedMatmulError("grouped matmul exceeds U32 indexing"));
+        }
+    }
+    if strategy != GroupedStrategy::Scalar {
+        let supported = regroup::supported(&input, e, n);
+        if supported {
+            return Ok(regroup::launch(input, weights, row_experts));
+        }
+        if strategy == GroupedStrategy::TensorCore {
+            return Err(GroupedMatmulError("requested grouped 16x16x16 Tensor Core configuration is unavailable"));
         }
     }
     let output = empty_device_contiguous_dtype(
