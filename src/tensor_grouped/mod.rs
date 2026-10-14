@@ -5,6 +5,8 @@ mod tests_backward;
 mod tensorcore;
 mod segmented;
 mod regroup;
+mod prepared;
+pub use prepared::{GroupedKernelPlan,prepare_grouped_matmul_nt};
 pub use segmented::{GroupedStrategy, grouped_matmul_nt_segmented};
 mod kernel;
 

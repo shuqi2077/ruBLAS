@@ -20,6 +20,49 @@ use crate::kernel_ir::{
     routines::{BlueprintStrategy, Routine as _},
 };
 
+/// Prepare the existing naive kernel without allocating or launching layout copies.
+/// LHS must be row-major, RHS column-major, and output row-major.
+pub fn prepare_canonical_ref<R: Runtime>(
+    client: &ComputeClient<R>, lhs: InputBinding<R>, rhs: InputBinding<R>,
+    out: TensorBinding<R>, dtypes: &MatmulElems,
+) -> Result<PreparedKernel<R>, MatmulSetupError> {
+    use crate::kernel_ir::{components::batch::naive::matmul_entry, launch::*};
+    let rank = lhs.shape().len();
+    if rank < 2 || rhs.shape().len() != rank || lhs.scheme().is_some() || rhs.scheme().is_some()
+        || !matches!(matrix_batch_layout(&lhs.data().strides, None), MatrixBatchLayout::Contiguous)
+        || rhs.data().strides[rank - 2] != 1
+        || rhs.data().strides[rank - 1] != rhs.shape()[rank - 2]
+        || !matches!(matrix_batch_layout(&out.strides, None), MatrixBatchLayout::Contiguous)
+    {
+        return Err(MatmulSetupError::InvalidConfig(Box::new("prepared naive matmul requires canonical unquantized layouts")));
+    }
+    let vector_sizes = MatmulVectorSizes {
+        lhs: tensor_vector_size_parallel(client.io_optimized_vector_sizes(dtypes.lhs_global.size()),
+            &lhs.data().shape, &lhs.data().strides, rank - 1),
+        rhs: tensor_vector_size_parallel(client.io_optimized_vector_sizes(dtypes.rhs_global.size()),
+            &rhs.data().shape, &rhs.data().strides, rank - 2),
+        out: 1,
+    };
+    let address_type = lhs.required_address_type().max(rhs.required_address_type())
+        .max(out.required_address_type(dtypes.acc_global.size()));
+    let problem = MatmulProblem::from_shapes_and_strides(lhs.shape().into(), rhs.shape().into(),
+        (&out.shape).into(), lhs.data().strides.clone(), rhs.data().strides.clone(), out.strides.clone(),
+        dtypes.as_global_elems(), address_type, None, None)?;
+    let settings = NaiveRoutine::device_settings(client, vector_sizes);
+    let expanded = NaiveRoutine::expand_blueprint(&problem, &settings, &BlueprintStrategy::Inferred(().into()))?;
+    let info = NaiveRoutine::prepare(&problem, &settings, expanded)?;
+    let input = <InputArg<TensorArgs> as ConcreteInputsFactory<NaiveRoutine>>::create(
+        lhs, rhs, &info.blueprint, &problem, &info.vector_sizes, dtypes);
+    let output = <OutputArg<TensorArgs> as ConcreteOutputFactory<NaiveRoutine>>::create(
+        out, &info.blueprint, &problem, &info.vector_sizes, dtypes);
+    Ok(matmul_entry::prepare::<TensorArgs, Lhs, LhsSize, Rhs, RhsSize, Acc, AccSize, R>(
+        client, info.ruda_count_plan.resolve(), info.ruda_dim, info.address_type, input, output, (),
+        ruda_mapping_launch(&info.ruda_count_plan), info.blueprint,
+        include_str!("../components/batch/naive/matmul.rs").to_owned(),
+        [dtypes.lhs_global, dtypes.rhs_global, dtypes.acc_global],
+        [info.vector_sizes.lhs, info.vector_sizes.rhs, info.vector_sizes.out]))
+}
+
 #[allow(clippy::result_large_err)]
 pub fn launch_ref<R: Runtime>(
     client: &ComputeClient<R>,

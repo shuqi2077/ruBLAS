@@ -52,6 +52,36 @@ pub(super) fn launch<R: Runtime>(input: RudaTensor<R>, weights: RudaTensor<R>, i
     output
 }
 
+pub(super) fn prepare<R:Runtime>(input:&RudaTensor<R>,weights:&RudaTensor<R>,ids:&RudaTensor<R>,output:&RudaTensor<R>)
+    ->super::GroupedKernelPlan<R>
+{
+    let (m,k,e,n)=(input.meta.shape()[0],input.meta.shape()[1],weights.meta.shape()[0],weights.meta.shape()[1]);
+    let mut kernels=Vec::new();if m==0 {return super::GroupedKernelPlan {kernels,workspace:Vec::new()};}
+    let allocate=|shape:Shape,dtype:DType|empty_device_contiguous_dtype(input.client.clone(),input.device.clone(),shape,dtype);
+    let counts=allocate([e].into(),DType::U32);let ranks=allocate([m].into(),DType::U32);
+    let offsets=allocate([e+1].into(),DType::U32);let packed=allocate([m,k].into(),input.dtype);
+    let result=allocate([m,n].into(),input.dtype);let client=&input.client;
+    let dim=RudaDim::new(client.properties(),e);
+    kernels.push(clear::prepare::<R>(client,calculate_ruda_count_elemwise(client,e,dim),dim,counts.clone().into_array_arg()));
+    let dim=RudaDim::new(client.properties(),m);
+    kernels.push(count::prepare::<R>(client,calculate_ruda_count_elemwise(client,m,dim),dim,
+        ids.clone().into_array_arg(),counts.clone().into_array_arg(),ranks.clone().into_array_arg(),e as u32));
+    kernels.push(prefix::prepare::<R>(client,RudaCount::Static(1,1,1),RudaDim::new_1d(1),
+        counts.clone().into_array_arg(),offsets.clone().into_array_arg()));
+    let dim=RudaDim::new(client.properties(),m*k);
+    kernels.push(pack::prepare::<R>(client,calculate_ruda_count_elemwise(client,m*k,dim),dim,
+        input.clone().into_array_arg(),ids.clone().into_array_arg(),ranks.clone().into_array_arg(),offsets.clone().into_array_arg(),
+        packed.clone().into_array_arg(),e as u32,k as u32,input.dtype.into()));
+    kernels.push(tensorcore::segmented::prepare::<R>(client,RudaCount::Static(n.div_ceil(16) as u32,e as u32,1),RudaDim::new_1d(32),
+        packed.clone().into_array_arg(),weights.clone().into_array_arg(),offsets.clone().into_array_arg(),result.clone().into_array_arg(),
+        n as u32,k as u32,input.dtype.into()));
+    let dim=RudaDim::new(client.properties(),m*n);
+    kernels.push(unpack::prepare::<R>(client,calculate_ruda_count_elemwise(client,m*n,dim),dim,
+        result.clone().into_array_arg(),ids.clone().into_array_arg(),ranks.clone().into_array_arg(),offsets.clone().into_array_arg(),
+        output.clone().into_array_arg(),e as u32,n as u32,input.dtype.into()));
+    super::GroupedKernelPlan {kernels,workspace:vec![counts,ranks,offsets,packed,result]}
+}
+
 #[ruda(launch)]
 fn clear(counts: &mut Array<u32>) {
     if ABSOLUTE_POS < counts.len() { counts[ABSOLUTE_POS]=0; }
