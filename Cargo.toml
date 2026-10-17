@@ -24,9 +24,9 @@ extended = ["heavy"]
 full = ["extended"]
 
 [dependencies]
-ruda-driver-cann = { version = "0.1.98", path = "../ruda-driver-cann", optional = true }
-ruda-kernel = { version = "0.1.45", path = "../ruda-kernel", default-features = false }
-ruda = { version = "0.1.46", path = "../ruda", default-features = false }
+ruda-driver-cann = { version = "0.1.99", path = "../ruda-driver-cann", optional = true }
+ruda-kernel = { version = "0.1.46", path = "../ruda-kernel", default-features = false }
+ruda = { version = "0.1.47", path = "../ruda", default-features = false }
 half = { version = "=2.7.1", features = ["alloc", "num-traits", "serde", "bytemuck"] }
 
 [lints.rust]
@@ -44,7 +44,7 @@ optional = true
 
 [dependencies.ruda-test-utils]
 path = "../ruda-test-utils"
-version = "0.1.98"
+version = "0.1.99"
 default-features = false
 optional = true
 
