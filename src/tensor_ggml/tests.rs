@@ -27,6 +27,35 @@ fn packed_q4_projection_and_embedding_do_not_create_dense_weight_storage() {
 }
 
 #[test]
+fn packed_ggml_indices_reject_negative_out_of_range_and_truncated_values() {
+    let device = Default::default();
+    let mut bytes = Vec::new();
+    for scale in [1.0f32, 2.0] {
+        bytes.extend_from_slice(&f16::from_f32(scale).to_bits().to_le_bytes());
+        bytes.extend_from_slice(&[0x99; 16]);
+    }
+    let weights = GgmlGemm::<TestRuntime>::from_bytes(bytes.clone(), GgmlType::Q4_0, 2, 32, false, &device).unwrap();
+    let input = from_data(TensorData::new(vec![1.0f32; 32], [1, 1, 32]), &device);
+    let invalid = [-1i32, 2, i32::MAX].into_iter()
+        .map(|index| TensorData::new(vec![index], [1, 1]))
+        .chain([-1i64, 2, 1i64 << 32, (1i64 << 32) + 1, i64::MAX].into_iter()
+            .map(|index| TensorData::new(vec![index], [1, 1])));
+    for data in invalid {
+        let indices = from_data(data, &device);
+        assert_eq!(weights.gather(indices.clone(), DType::F32).unwrap_err(),
+            GgmlError("GGUF embedding index out of bounds".into()));
+        assert_eq!(weights.forward_selected(input.clone(), indices, 2).unwrap_err(),
+            GgmlError("GGUF expert index out of bounds".into()));
+    }
+    for data in [TensorData::new(vec![1i32], [1, 1]), TensorData::new(vec![1i64], [1, 1])] {
+        let indices = from_data(data, &device);
+        assert_eq!(into_data_sync(weights.gather(indices.clone(), DType::F32).unwrap()).to_vec::<f32>().unwrap(), vec![2.0; 32]);
+        assert_eq!(into_data_sync(weights.forward_selected(input.clone(), indices, 2).unwrap()).to_vec::<f32>().unwrap(), vec![64.0]);
+    }
+    assert_eq!(into_data_sync(weights.original_storage().clone()).to_vec::<u8>().unwrap(), bytes);
+}
+
+#[test]
 #[ignore = "requires pinned GGML reference fixture in RUDA_GGML_ORACLE"]
 fn all_ggml_formats_match_independent_ggml_projection_gather_and_vector_reference() {
     use std::io::Read;

@@ -9,7 +9,7 @@ use ruda_core::{
     tensor::{DType, Shape, data::TensorData, quantization::GgmlType},
 };
 use ruda_kernel::{
-    dsl::{Runtime, calculate_ruda_count_elemwise, prelude::RudaDim},
+    dsl::{Runtime, calculate_ruda_count_elemwise, prelude::{ArrayArg, RudaDim}},
     tensor::{RudaTensor, allocation::empty_device_contiguous_dtype, contiguous::into_contiguous, transfer::from_data},
 };
 
@@ -167,6 +167,7 @@ impl<R: Runtime> GgmlGemm<R> {
         let output = empty_device_contiguous_dtype(
             input.client.clone(), input.device.clone(), output_shape, input.dtype);
         if size != 0 {
+            let status = input.client.create_from_slice(&0u32.to_ne_bytes());
             let dim = RudaDim::new(input.client.properties(), size);
             let grid = calculate_ruda_count_elemwise(&input.client, size, dim);
             let (block, bytes) = self.format.block_layout();
@@ -174,7 +175,8 @@ impl<R: Runtime> GgmlGemm<R> {
                 ($f:ty, $i:ty) => { unsafe { kernels::matmul_selected::launch::<$f, $i, R>(
                     &input.client, grid, dim, input.clone().into_tensor_arg(), indices.clone().into_tensor_arg(),
                     self.packed.clone().into_tensor_arg(), self.table.clone().into_tensor_arg(),
-                    output.clone().into_tensor_arg(), self.width, columns, experts,
+                    output.clone().into_tensor_arg(), ArrayArg::from_raw_parts(status.clone(), 1),
+                    self.width, columns, experts,
                     selected, input_slots, self.row_bytes, block, bytes, self.format as u32, self.big_endian,
                 ) } };
             }
@@ -183,6 +185,13 @@ impl<R: Runtime> GgmlGemm<R> {
                 (DType::F16, DType::I32) => run!(f16, i32), (DType::F16, DType::I64) => run!(f16, i64),
                 (DType::BF16, DType::I32) => run!(bf16, i32), (DType::BF16, DType::I64) => run!(bf16, i64),
                 _ => unreachable!(),
+            }
+            let status = input.client.read_one(status)
+                .map_err(|error| GgmlError(format!("GGUF index check readback failed: {error}")))?;
+            let status: [u8; 4] = status[..].try_into()
+                .map_err(|_| GgmlError("GGUF index check returned an invalid status size".into()))?;
+            if u32::from_ne_bytes(status) != 0 {
+                return Err(GgmlError("GGUF expert index out of bounds".into()));
             }
         }
         Ok(output)
@@ -201,6 +210,7 @@ impl<R: Runtime> GgmlGemm<R> {
         let indices = into_contiguous(indices);
         let output = empty_device_contiguous_dtype(indices.client.clone(), indices.device.clone(), Shape::from(shape), dtype);
         if size != 0 {
+            let status = indices.client.create_from_slice(&0u32.to_ne_bytes());
             let dim = RudaDim::new(indices.client.properties(), size);
             let grid = calculate_ruda_count_elemwise(&indices.client, size, dim);
             let (block, bytes) = self.format.block_layout();
@@ -208,7 +218,8 @@ impl<R: Runtime> GgmlGemm<R> {
                 ($f:ty, $i:ty) => { unsafe { kernels::gather::launch::<$f, $i, R>(
                     &indices.client, grid, dim, indices.clone().into_tensor_arg(),
                     self.packed.clone().into_tensor_arg(), self.table.clone().into_tensor_arg(),
-                    output.clone().into_tensor_arg(), self.width, self.rows, self.row_bytes,
+                    output.clone().into_tensor_arg(), ArrayArg::from_raw_parts(status.clone(), 1),
+                    self.width, self.rows, self.row_bytes,
                     block, bytes, self.format as u32, self.big_endian,
                 ) } };
             }
@@ -217,6 +228,13 @@ impl<R: Runtime> GgmlGemm<R> {
                 (DType::F16, DType::I32) => run!(f16, i32), (DType::F16, DType::I64) => run!(f16, i64),
                 (DType::BF16, DType::I32) => run!(bf16, i32), (DType::BF16, DType::I64) => run!(bf16, i64),
                 _ => unreachable!(),
+            }
+            let status = indices.client.read_one(status)
+                .map_err(|error| GgmlError(format!("GGUF index check readback failed: {error}")))?;
+            let status: [u8; 4] = status[..].try_into()
+                .map_err(|_| GgmlError("GGUF index check returned an invalid status size".into()))?;
+            if u32::from_ne_bytes(status) != 0 {
+                return Err(GgmlError("GGUF embedding index out of bounds".into()));
             }
         }
         Ok(output)
