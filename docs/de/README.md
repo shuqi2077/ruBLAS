@@ -31,13 +31,13 @@ cargo build --release --locked -p rublas --features tensor-matmul
 
 ## Dokumentation
 
-- [Benutzerhandbuch](../../../../docs/de/libraries/rublas.md)
-- [Umgebungseinrichtung](../../../../docs/de/getting-started.md)
+- [Benutzerhandbuch](../../../docs/de/libraries/rublas.md)
+- [Umgebungseinrichtung](../../../docs/de/getting-started.md)
 - [Cargo-Funktionen](../../Cargo.toml) · [Modulexporte](../../src/lib.rs)
 
 ## ruBLAS Benutzerhandbuch
 
-[Compute-Bibliotheken](../../../../docs/de/libraries/README.md) · [Laufzeit API](../../../../docs/de/runtime-api.md) · [中文](../zh/README.md)
+[Compute-Bibliotheken](../../../docs/de/libraries/README.md) · [Laufzeit API](../../../docs/de/runtime-api.md) · [中文](../zh/README.md)
 
 ### 1. Übersicht und Funktionen
 
@@ -130,7 +130,7 @@ Quelle: [gruppierte Schnittstelle](../../src/tensor_grouped/mod.rs) und [Kernel]
 
 ### 5. Integration mit anderen Bibliotheken
 
-[ruDNN MoE](../../../../docs/de/libraries/rudnn.md) verwendet gruppierte Multiplikation für Expertenprojektionen. Quantisierte Gewichte verwenden das separate Modul `tensor_int4`; Die gewöhnliche gruppierte Gleitkommamultiplikation ist keine INT4-Expertenberechnung.
+[ruDNN MoE](../../../docs/de/libraries/rudnn.md) verwendet gruppierte Multiplikation für Expertenprojektionen. Quantisierte Gewichte verwenden das separate Modul `tensor_int4`; Die gewöhnliche gruppierte Gleitkommamultiplikation ist keine INT4-Expertenberechnung.
 
 `grouped_matmul_nt` verwendet Skalarakkumulation. Messen Sie Matrixmultiplikationsstrategien für Ihren dtype, Ihre Form und Ihr Backend.
 
