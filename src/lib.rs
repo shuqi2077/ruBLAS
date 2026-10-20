@@ -23,5 +23,9 @@ pub mod tensor_int4;
 #[allow(unsafe_code)]
 pub mod tensor_nf4;
 
+#[cfg(feature = "tensor-ggml")]
+#[allow(unsafe_code)]
+pub mod tensor_ggml;
+
 #[cfg(feature = "tensor-grouped")]
 pub mod tensor_grouped;
