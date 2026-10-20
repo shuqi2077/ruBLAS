@@ -42,7 +42,7 @@ pub(super) fn segmented<F: Float>(
                 16usize,16usize,16usize,cmma::MatrixLayout::RowMajor,&left.to_slice(),16);
             let b=cmma::Matrix::<F>::from_slice(cmma::MatrixIdent::B,
                 16usize,16usize,16usize,cmma::MatrixLayout::ColMajor,&right.to_slice(),16);
-            cmma::execute::<F,F,f32,f32>(&a,&b,&acc,&acc);
+            cmma::execute::<F,F,f32,f32, _>(&a,&b,&acc,&acc);
             sync_ruda();
             if inner as usize-base_k<=16 {base_k=inner as usize;}else {base_k+=16;}
         }
