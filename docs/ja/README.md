@@ -31,13 +31,13 @@ cargo build --release --locked -p rublas --features tensor-matmul
 
 ## ドキュメント
 
-- [ユーザーガイド](../../../docs/ja/libraries/rublas.md)
-- [環境設定](../../../docs/ja/getting-started.md)
+- [ユーザーガイド](../../../../docs/ja/libraries/rublas.md)
+- [環境設定](../../../../docs/ja/getting-started.md)
 - [Cargo 機能](../../Cargo.toml) · [モジュール エクスポート](../../src/lib.rs)
 
 ## ruBLAS ユーザーガイド
 
-[計算ライブラリ](../../../docs/ja/libraries/README.md) · [ランタイム API](../../../docs/ja/runtime-api.md) · [中文](../zh/README.md)
+[計算ライブラリ](../../../../docs/ja/libraries/README.md) · [ランタイム API](../../../../docs/ja/runtime-api.md) · [中文](../zh/README.md)
 
 ### 1. 概要と特徴
 
@@ -130,7 +130,7 @@ K、N、および G はゼロ以外でなければなりません。 K は G で
 
 ### 5. 他のライブラリとの統合
 
-[ruDNN MoE](../../../docs/ja/libraries/rudnn.md) は、エキスパート投影にグループ化された乗算を使用します。量子化された重みは別の `tensor_int4` モジュールを使用します。通常の浮動小数点グループ乗算は、INT4 専門家による計算ではありません。
+[ruDNN MoE](../../../../docs/ja/libraries/rudnn.md) は、エキスパート投影にグループ化された乗算を使用します。量子化された重みは別の `tensor_int4` モジュールを使用します。通常の浮動小数点グループ乗算は、INT4 専門家による計算ではありません。
 
 `grouped_matmul_nt` はスカラー累積を使用します。dtype、形状、バックエンドに応じて行列乗算戦略を測定してください。
 
