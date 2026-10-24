@@ -13,6 +13,36 @@ use super::matmul_autotune_with_precision;
 
 pub use crate::kernel_ir::definition::F32MathMode;
 
+pub fn launch_matmul_pipelined<R: Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R>,out:RudaTensor<R>,
+    f32_math:F32MathMode)->Result<(),MatmulSetupError> {
+    if lhs.meta.num_dims()==2 && rhs.meta.num_dims()==2 && out.meta.num_dims()==2
+        && matches!(lhs.dtype,DType::F16|DType::BF16) && rhs.dtype==lhs.dtype
+        && matches!(out.dtype,DType::F16|DType::BF16|DType::F32)
+        && lhs.qparams.is_none() && rhs.qparams.is_none()
+        && lhs.meta.shape()[0]>=256 && rhs.meta.shape()[1]>=1024 && lhs.meta.shape()[1]>=1024
+        && lhs.meta.shape()[0]%128==0 && rhs.meta.shape()[1]%128==0 && lhs.meta.shape()[1]%64==0
+        && lhs.meta.strides()[0]==lhs.meta.shape()[1] && lhs.meta.strides()[1]==1
+        && rhs.meta.strides()[0]==1 && rhs.meta.strides()[1]==rhs.meta.shape()[0]
+        && out.meta.strides()[0]==out.meta.shape()[1] && out.meta.strides()[1]==1
+    {
+        use crate::kernel_ir::{components::{tile::TileMatmulKind,stage::PartitionBuffering},
+            definition::{MatmulProblem,TilingBlueprint,TilingScheme},routines::BlueprintStrategy};
+        use ruda_kernel::{dsl::prelude::AddressType,tiling::{TileSize,PartitionSize,StageSize,
+            ruda_count::{RudaCountStrategy,GlobalOrder,HyperrudaBlueprint}}};
+        let globals=MatmulGlobalElems{f32_math,lhs:lhs.dtype.into(),rhs:rhs.dtype.into(),out:out.dtype.into()};
+        let problem=MatmulProblem::from_shapes_and_strides(lhs.meta.shape().clone(),rhs.meta.shape().clone(),out.meta.shape().clone(),
+            lhs.meta.strides().clone(),rhs.meta.strides().clone(),out.meta.strides().clone(),globals,AddressType::U32,None,None)?;
+        let scheme=TilingScheme::builder().with_tile_size(TileSize::new(16,16,16))
+            .with_partition_size(PartitionSize::new(2,8,4)).with_stage_size(StageSize::new(4,1,1)).build().unwrap();
+        let count=RudaCountStrategy::FromProblem;
+        let hyper=HyperrudaBlueprint::builder().global_order(GlobalOrder::SwizzleRow(4)).ruda_count_strategy(count).build();
+        let plan=TilingBlueprint::builder(TileMatmulKind::Cmma,scheme,32,&problem)
+            .partition_buffering(PartitionBuffering::Double).hyperruda_blueprint(hyper).build();
+        return launch_matmul_with_precision(&Strategy::DoubleAsyncCyclicCmma(BlueprintStrategy::Forced(plan)),lhs,rhs,out,f32_math);
+    }
+    launch_matmul_with_precision(&Strategy::DoubleAsyncCyclicCmma(Default::default()),lhs,rhs,out,f32_math)
+}
+
 /// The strategy to be used when launching a matmul kernel.
 pub enum MatmulStrategy {
     #[cfg(feature = "tensor-matmul-autotune")]

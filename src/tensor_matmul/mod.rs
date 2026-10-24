@@ -7,6 +7,7 @@ mod triangular;
 #[cfg(all(test, feature = "tensor-grouped"))]
 mod tests_fused;
 mod gemv_search;
+mod gemv;
 mod tune;
 
 /// Contains utilities for matmul operation
@@ -18,6 +19,7 @@ pub use fused::{GemmActivation, FusedGemmStrategy, matmul_bias_activation};
 pub use complex::{ComplexGemmOptions, complex_gemm};
 pub use triangular::{TriangularSolveOptions, triangular_solve};
 pub use gemv_search::*;
+pub use gemv::launch_gemv_low_precision;
 #[cfg(feature = "tensor-matmul-autotune")]
 pub use tune::*;
 pub use utils::*;
