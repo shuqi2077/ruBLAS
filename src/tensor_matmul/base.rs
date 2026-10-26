@@ -219,7 +219,7 @@ pub fn matmul_with_precision<R: Runtime>(
                 tensor
             };
             super::launch_gemv_low_precision(matrix(lhs.clone()), matrix(rhs.clone()), matrix(output.clone()))
-        } else if rank >= 2 && lhs.meta.shape()[rank - 2] > 1
+        } else if !matches!(strategy, MatmulStrategy::Ruda) && rank >= 2 && lhs.meta.shape()[rank - 2] > 1
             && lhs.client.features().matmul.mma.iter().chain(lhs.client.features().matmul.cmma.iter())
                 .any(|config| config.a_type == lhs.dtype.into() && config.b_type == rhs.dtype.into()
                     && config.cd_type == DType::F32.into())
@@ -248,6 +248,59 @@ pub fn matmul_with_precision<R: Runtime>(
         }
         MatmulStrategy::Ruda => {
             let out = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
+            if super::skinny::try_launch(&lhs, &rhs, &out) {
+                return Ok(out);
+            }
+            if super::accurate::try_launch(&lhs, &rhs, &out, f32_math)? {
+                return Ok(out);
+            }
+            if super::training_gemm::matmul_bf16_training(&lhs, &rhs, &out) {
+                return Ok(out);
+            }
+            if matches!(lhs.dtype, DType::BF16 | DType::F16) && lhs.dtype == rhs.dtype
+                && lhs.qparams.is_none() && rhs.qparams.is_none()
+                && lhs.meta.num_dims() == 2 && rhs.meta.num_dims() == 2
+                && lhs.meta.shape()[0] >= 32 && lhs.meta.shape()[1] >= 256 && rhs.meta.shape()[1] >= 128
+            {
+                if lhs.dtype == DType::BF16 && rhs.meta.shape()[0] == lhs.meta.shape()[1]
+                    && out.meta.num_dims() == 2
+                    && out.meta.shape()[..] == [lhs.meta.shape()[0], rhs.meta.shape()[1]]
+                    && matches!(out.dtype, DType::BF16 | DType::F32) && out.qparams.is_none()
+                    && out.meta.strides()[1] == 1 && out.meta.strides()[0] == rhs.meta.shape()[1]
+                    && lhs.client.same_execution_queue(&rhs.client) && lhs.client.same_execution_queue(&out.client)
+                {
+                    return Ok(super::training_tune::matmul(lhs, rhs, out, f32_math));
+                }
+            }
+            let rank = lhs.meta.num_dims();
+            if matches!(lhs.dtype, DType::F16 | DType::BF16) && rank >= 2
+                && lhs.meta.shape()[rank - 2] > 1
+                && lhs.meta.num_elements() > 0 && rhs.meta.num_elements() > 0
+                && lhs.client.features().matmul.mma.iter().chain(lhs.client.features().matmul.cmma.iter())
+                    .any(|config| config.a_type == lhs.dtype.into() && config.b_type == rhs.dtype.into()
+                        && config.cd_type == DType::F32.into())
+            {
+                match launch_matmul_pipelined(lhs.clone(), rhs.clone(), out.clone(), f32_math) {
+                    Ok(()) => return Ok(out),
+                    Err(MatmulSetupError::Unavailable(_) | MatmulSetupError::InvalidConfig(_)
+                        | MatmulSetupError::Vectorization(_)) => {},
+                    Err(error) => return Err(error),
+                }
+            }
+            if matches!(lhs.dtype, DType::BF16 | DType::F16) && lhs.dtype == rhs.dtype
+                && lhs.qparams.is_none() && rhs.qparams.is_none()
+                && lhs.meta.num_dims() == 2 && rhs.meta.num_dims() == 2
+                && lhs.meta.shape()[0] >= 32 && lhs.meta.shape()[1] >= 256 && rhs.meta.shape()[1] >= 128
+            {
+                match launch_matmul_with_precision(&Strategy::DoubleAsyncCyclicCmma(Default::default()),
+                    lhs.clone(), rhs.clone(), out.clone(), f32_math)
+                {
+                    Ok(()) => return Ok(out),
+                    Err(MatmulSetupError::Unavailable(_) | MatmulSetupError::InvalidConfig(_)
+                        | MatmulSetupError::Vectorization(_)) => {},
+                    Err(error) => return Err(error),
+                }
+            }
             if lhs.dtype == DType::F64 {
                 launch_matmul_naive(&Strategy::Naive, lhs, rhs, out.clone())?;
             } else {
