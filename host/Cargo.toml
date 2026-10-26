@@ -46,12 +46,12 @@ optional = true
 
 [dependencies.ruda-core]
 path = "../../ruda-core"
-version = "0.1.10"
+version = "0.1.11"
 default-features = false
 features = [ "tensor-host-storage",]
 
 [dependencies.ruprim-host]
 package = "ruPRIM-host"
 path = "../../ruPRIM/host"
-version = "0.1.94"
+version = "0.1.104"
 default-features = false
