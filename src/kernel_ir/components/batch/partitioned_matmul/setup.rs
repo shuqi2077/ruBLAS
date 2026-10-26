@@ -105,6 +105,23 @@ impl<RC: RuntimeConfig, GMM: GlobalMatmulFamily<RC>, S: GlobalPartitionMatmul> B
         GMM::rudadim_resource(blueprint, dtypes, vector_sizes)
     }
 
+    fn prepare_kernel<MA: MatmulArgs<Config = RC>, R: Runtime>(
+        client: &ComputeClient<R>, ruda_dim: RudaDim, ruda_count: RudaCount,
+        address_type: AddressType, input: InputRuntimeArg<MA, R>,
+        output: OutputRuntimeArg<MA, R>, config: ConfigRuntimeArg<MA, R>,
+        mapping: RudaMappingLaunch<R>, blueprint: Self::Blueprint,
+        dtypes: &MatmulElems, vectors: &MatmulVectorSizes,
+    ) -> Option<PreparedKernel<R>> {
+        Some(matmul_entry::prepare::<MA, Lhs, LhsSize, Rhs, RhsSize, Acc, AccSize, GMM, S, R>(
+            client, ruda_count, ruda_dim, address_type, input, output, config, mapping,
+            blueprint, dtypes.clone(), concat!(
+                include_str!("../../global/memory/iterator.rs"),
+                include_str!("../../global/read/reader/full_reader.rs"),
+                include_str!("../../global/single_stage/simple/matmul.rs"),
+            ).to_owned(), [dtypes.lhs_global, dtypes.rhs_global, dtypes.acc_global],
+            [vectors.lhs, vectors.rhs, vectors.out]))
+    }
+
     fn validate_blueprint<R: Runtime>(
         client: &ComputeClient<R>,
         blueprint: &Self::Blueprint,

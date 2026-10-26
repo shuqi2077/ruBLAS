@@ -50,6 +50,14 @@ fn warp_gemv_vector<I: Float, O: Float, N: Size>(
 pub fn launch_gemv_low_precision<R: Runtime>(
     lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>,
 ) -> Result<(), MatmulSetupError> {
+    let (task,count,args,origin)=prepare_gemv_low_precision(lhs,rhs,out)?.into_parts();
+    origin.launch(task,count,args);
+    Ok(())
+}
+
+pub fn prepare_gemv_low_precision<R: Runtime>(
+    lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>,
+) -> Result<PreparedKernel<R>, MatmulSetupError> {
     let invalid = || MatmulSetupError::InvalidConfig(Box::new(
         "GEMV requires disjoint bounded singleton-row F16/BF16 inputs and contiguous output".to_string()));
     if !matches!(lhs.dtype, DType::BF16 | DType::F16) || rhs.dtype != lhs.dtype
@@ -95,14 +103,13 @@ pub fn launch_gemv_low_precision<R: Runtime>(
     let aligned = k % vector_size == 0 && rhs.meta.strides()[1] == k
         && [&lhs, &rhs].iter().all(|x| x.handle.offset_start.unwrap_or(0) % (vector_size * x.dtype.size()) as u64 == 0);
     if aligned {
-        warp_gemv_vector::launch::<R>(&client,RudaCount::Static(n.div_ceil(4) as u32,1,1),RudaDim::new_2d(32,4),
+        Ok(warp_gemv_vector::prepare::<R>(&client,RudaCount::Static(n.div_ceil(4) as u32,1,1),RudaDim::new_2d(32,4),
             vector_size, lhs.clone().into_array_arg(),rhs.clone().into_array_arg(),out.clone().into_array_arg(),
             (k / vector_size) as u32,n as u32,(rhs.meta.strides()[1] / vector_size) as u32,
-            lhs.dtype.into(),out.dtype.into());
+            lhs.dtype.into(),out.dtype.into()))
     } else {
-        warp_gemv::launch::<R>(&client,RudaCount::Static(n.div_ceil(4) as u32,1,1),RudaDim::new_2d(32,4),
+        Ok(warp_gemv::prepare::<R>(&client,RudaCount::Static(n.div_ceil(4) as u32,1,1),RudaDim::new_2d(32,4),
             lhs.clone().into_tensor_arg(),rhs.into_tensor_arg(),out.clone().into_tensor_arg(),
-            k as u32,n as u32,lhs.dtype.into(),out.dtype.into());
+            k as u32,n as u32,lhs.dtype.into(),out.dtype.into()))
     }
-    Ok(())
 }

@@ -58,6 +58,15 @@ pub trait BatchMatmulFamily<RC: RuntimeConfig>: 'static + Send + Sync {
         vector_sizes: &MatmulVectorSizes,
     ) -> Result<(), LaunchError>;
 
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_kernel<MA: MatmulArgs<Config = RC>, R: Runtime>(
+        _client: &ComputeClient<R>, _ruda_dim: RudaDim, _ruda_count: RudaCount,
+        _address_type: AddressType, _input: InputRuntimeArg<MA, R>,
+        _output: OutputRuntimeArg<MA, R>, _config: ConfigRuntimeArg<MA, R>,
+        _mapping: RudaMappingLaunch<R>, _blueprint: Self::Blueprint,
+        _dtypes: &MatmulElems, _vectors: &MatmulVectorSizes,
+    ) -> Option<PreparedKernel<R>> { None }
+
     /// Returns the compute resources required to run this matmul.
     fn rudadim_resource(
         blueprint: &Self::Blueprint,

@@ -2,6 +2,7 @@ use ruda_kernel::{dsl::{Runtime, RudaTuneId}, tensor::RudaTensor};
 use crate::tensor_matmul::{F32MathMode, launch_matmul_with_precision, launch_matmul_naive, utils::init_matmul_output};
 use ruda_core::tensor::DType;
 use ruda_kernel::library::tensor::MatrixBatchLayout;
+use ruda_kernel::dsl::ir::SemanticType;
 use ruda::runtime::tune::{LocalTuner, Tunable, TunableSet, TuneGroup};
 use crate::kernel_ir::{
     components::tile::TileMatmulKind,
@@ -53,6 +54,7 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
 
     let client = lhs.client.clone();
     let num_cpu_cores = client.properties().hardware.num_cpu_cores;
+    let supports_tma = client.properties().features.supports_type(SemanticType::TensorMap);
 
     static STRICT_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::strict_f32::v1");
     static TF32_TUNER: LocalTuner<MatmulAutotuneKey, RudaTuneId> = LocalTuner::new("rublas::matmul::allow_tf32::v1");
@@ -488,6 +490,13 @@ pub fn matmul_autotune_with_precision<R: Runtime>(
                 &accelerated,
             ),
         ] {
+            if !supports_tma && matches!(
+                &strategy,
+                Strategy::SimpleTmaCmma(_) | Strategy::SimpleTmaMma(_)
+                    | Strategy::SpecializedTmaCmma(_) | Strategy::SpecializedTmaMma(_)
+            ) {
+                continue;
+            }
             let priority_within_group = |key: &MatmulAutotuneKey, double_buf: bool| match double_buf
             {
                 false => PRIORITY_MAX,
