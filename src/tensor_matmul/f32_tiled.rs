@@ -1,6 +1,6 @@
 use ruda_core::tensor::DType;
 use ruda_kernel::{dsl as kernel_dsl, dsl::prelude::*, tensor::RudaTensor};
-use ruda_kernel::dsl::barrier::{copy_async, commit_copy_group, wait_copy_group};
+use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_copy_group};
 use crate::kernel_ir::{definition::MatmulSetupError, launch::Strategy};
 use super::{F32MathMode, launch_matmul_with_precision};
 
@@ -13,7 +13,7 @@ pub fn try_addmm_f32_tiled<R: Runtime>(bias: &RudaTensor<R>, a: &RudaTensor<R>, 
     out: &RudaTensor<R>, alpha: f32, beta: f32, math: F32MathMode) -> Result<bool, MatmulSetupError> {
     if math != F32MathMode::Strict || alpha == 0.0 || out.meta.num_dims() != 2 || bias.meta.shape() != out.meta.shape()
         || bias.dtype != DType::F32 || bias.qparams.is_some() || !bias.client.same_execution_queue(&out.client)
-        || bias.meta.shape().iter().zip(bias.meta.strides()).try_fold(1usize, |span, (&size, &stride)|
+        || bias.meta.shape().iter().zip(bias.meta.strides().iter()).try_fold(1usize, |span, (&size, &stride)|
             size.checked_sub(1).and_then(|v| v.checked_mul(stride)).and_then(|v| span.checked_add(v)))
             .is_none_or(|span| span > u32::MAX as usize)
     { return Ok(false); }
@@ -57,7 +57,7 @@ fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
         || (d == 1 && (b.meta.shape()[0] != batch || out.meta.shape()[0] != batch
             || m.checked_mul(n) != Some(out.meta.strides()[0])))
         || [a, b].iter().any(|x| x.handle.offset_start.unwrap_or(0) % 16 != 0)
-        || [a, b, out].iter().any(|x| x.meta.shape().iter().zip(x.meta.strides()).try_fold(1usize,
+        || [a, b, out].iter().any(|x| x.meta.shape().iter().zip(x.meta.strides().iter()).try_fold(1usize,
             |span, (&size, &stride)| size.checked_sub(1).and_then(|v|v.checked_mul(stride)).and_then(|v|span.checked_add(v)))
             .is_none_or(|span| span > u32::MAX as usize))
     { return Ok(false); }
