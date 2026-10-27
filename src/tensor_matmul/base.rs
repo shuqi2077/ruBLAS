@@ -254,7 +254,7 @@ pub fn matmul_with_precision<R: Runtime>(
             if super::accurate::try_launch(&lhs, &rhs, &out, f32_math)? {
                 return Ok(out);
             }
-            if super::training_gemm::matmul_bf16_training(&lhs, &rhs, &out) {
+            if super::training_gemm::matmul_low_precision_tiled(&lhs, &rhs, &out) {
                 return Ok(out);
             }
             if matches!(lhs.dtype, DType::BF16 | DType::F16) && lhs.dtype == rhs.dtype

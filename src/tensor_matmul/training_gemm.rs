@@ -4,8 +4,13 @@ use ruda_kernel::{dsl as kernel_dsl, dsl::{cmma, prelude::{*, barrier::{Barrier,
 /// Fixed-layout BF16 training GEMM. Accumulation stays FP32, in increasing K order.
 #[allow(unsafe_code)]
 pub fn matmul_bf16_training<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>) -> bool {
+    a.dtype == DType::BF16 && matmul_low_precision_tiled(a, b, out)
+}
+
+pub(super) fn matmul_low_precision_tiled<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>) -> bool {
     if R::name(&a.client) != "cuda"
-        || a.dtype != DType::BF16 || b.dtype != DType::BF16 || !matches!(out.dtype, DType::BF16 | DType::F32)
+        || !matches!(a.dtype, DType::BF16 | DType::F16) || b.dtype != a.dtype
+        || (out.dtype != a.dtype && out.dtype != DType::F32)
         || a.qparams.is_some() || b.qparams.is_some() || out.qparams.is_some()
         || !matches!(a.meta.num_dims(), 2 | 3) || b.meta.num_dims() != a.meta.num_dims() || out.meta.num_dims() != a.meta.num_dims()
         || !a.client.same_execution_queue(&b.client) || !a.client.same_execution_queue(&out.client)
@@ -39,7 +44,7 @@ pub fn matmul_bf16_training<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, ou
         || m.checked_mul(n).and_then(|v| v.checked_mul(batch)).is_none_or(|v| v > u32::MAX as usize)
         || !a.client.features().copy_async
         || !a.client.features().matmul.cmma.contains(&MmaConfig {
-            a_type: DType::BF16.into(), b_type: DType::BF16.into(), cd_type: DType::F32.into(),
+            a_type: a.dtype.into(), b_type: b.dtype.into(), cd_type: DType::F32.into(),
             m: 16, n: 16, k: 16,
         })
     { return false; }
@@ -87,9 +92,9 @@ pub(super) fn launch_tile_warp_grid<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<
         return Err("manual training pipeline requires two or three stages".into());
     }
     if manual && !a.client.features().matmul.mma.contains(&MmaConfig {
-        a_type: DType::BF16.into(), b_type: DType::BF16.into(), cd_type: DType::F32.into(),
+        a_type: a.dtype.into(), b_type: b.dtype.into(), cd_type: DType::F32.into(),
         m: 16, n: 8, k: 16,
-    }) { return Err("manual BF16 MMA is unavailable on this device".into()); }
+    }) { return Err("manual low-precision MMA is unavailable on this device".into()); }
     let d = a.meta.num_dims() - 2;
     let (m, k, n) = (a.meta.shape()[d], a.meta.shape()[d+1], b.meta.shape()[d+1]);
     if m % bm != 0 || n % bn != 0 { return Err("training tile does not divide the output geometry".into()); }
@@ -135,19 +140,19 @@ pub(super) fn launch_tile_warp_grid<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<
         unsafe { super::training_mma::tiled_warp_grid::launch_unchecked::<R>(&a.client, RudaCount::Static((n / bn * (m / bm)) as u32, batch as u32, 1), RudaDim::new_1d(threads as u32),
             left.into_array_arg(), right.into_array_arg(), out.clone().into_array_arg(), k, n, lda, ldb, ta, nt,
             m, batch, last_k, a_batch, b_batch, bm, bn, bk, asynchronous, warp_m,
-            stages, prefetch, warp_cols, DType::BF16.into(), out.dtype.into(), output_vector_size(&out)); }
+            stages, prefetch, warp_cols, a.dtype.into(), out.dtype.into(), output_vector_size(&out)); }
     } else {
         unsafe { tiled::launch_unchecked::<R>(&a.client, RudaCount::Static((n / bn * (m / bm)) as u32, batch as u32, 1), RudaDim::new_1d(threads as u32),
             left.into_array_arg(), right.into_array_arg(), out.clone().into_array_arg(), k, n, lda, ldb, ta, nt,
             m, batch, last_k, a_batch, b_batch, bm, bn, bk, asynchronous, warp_m,
-            DType::BF16.into(), out.dtype.into(), output_vector_size(&out)); }
+            a.dtype.into(), out.dtype.into(), output_vector_size(&out)); }
     }
     Ok(out)
 }
 
 pub(super) fn output_vector_size<R: Runtime>(out: &RudaTensor<R>) -> usize {
     if out.handle.offset_start.unwrap_or(0) % 16 == 0 {
-        if out.dtype == DType::BF16 { 8 } else { 4 }
+        if matches!(out.dtype, DType::BF16 | DType::F16) { 8 } else { 4 }
     } else { 1 }
 }
 
