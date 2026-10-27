@@ -52,12 +52,14 @@ pub(super) fn matmul_low_precision_tiled<R: Runtime>(a: &RudaTensor<R>, b: &Ruda
     true
 }
 
-pub(super) fn serial_k3<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, partial: &RudaTensor<R>) -> bool {
+pub(super) fn split_k<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, partial: &RudaTensor<R>,
+    parts: usize, block: usize) -> bool {
     let (m, k, n) = (a.meta.shape()[0], a.meta.shape()[1], b.meta.shape()[1]);
     let nt = b.meta.strides()[0] == 1;
     let lda = a.meta.strides()[0];
     let ldb = if nt { b.meta.strides()[1] } else { b.meta.strides()[0] };
-    if R::name(&a.client) != "cuda" || a.meta.strides()[1] != 1 || lda < k || lda % 8 != 0
+    if R::name(&a.client) != "cuda" || m == 0 || m % 32 != 0 || n == 0 || n % 32 != 0
+        || a.meta.strides()[1] != 1 || lda < k || lda % 8 != 0
         || (!nt && b.meta.strides()[1] != 1) || ldb < (if nt { k } else { n }) || ldb % 8 != 0
         || a.handle.offset_start.unwrap_or(0) % 16 != 0 || b.handle.offset_start.unwrap_or(0) % 16 != 0
         || (m - 1).checked_mul(lda).and_then(|v| v.checked_add(k)).is_none_or(|v| v > u32::MAX as usize)
@@ -67,11 +69,10 @@ pub(super) fn serial_k3<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, partia
             a_type: DType::BF16.into(), b_type: DType::BF16.into(), cd_type: DType::F32.into(), m: 16, n: 16, k: 16,
         })
     { return false; }
-    let block = k.div_ceil(3 * 64) * 64;
-    let mut left = a.clone(); left.meta.shape_mut()[1] = block; left.meta.insert(0, 3, block);
+    let mut left = a.clone(); left.meta.shape_mut()[1] = block; left.meta.insert(0, parts, block);
     let mut right = b.clone(); right.meta.shape_mut()[0] = block;
-    right.meta.insert(0, 3, block * b.meta.strides()[0]);
-    super::training_tile_tune::matmul(left, right, partial.clone(), k - 2 * block);
+    right.meta.insert(0, parts, block * b.meta.strides()[0]);
+    super::training_tile_tune::matmul(left, right, partial.clone(), k - (parts-1) * block);
     true
 }
 

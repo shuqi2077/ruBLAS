@@ -35,25 +35,44 @@ pub fn matmul_bf16_sliced_k2_bias<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>
     Ok(out)
 }
 
-/// A100 Qwen output/down projections: ordered serial split-K with BF16 writeback.
+/// Ordered three-part split-K with BF16 writeback between partial sums.
 pub fn matmul_bf16_serial_k3<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>,
     out: RudaTensor<R>) -> Result<RudaTensor<R>, MatmulSetupError> {
+    split_k(a, b, out, 3, false)
+}
+
+/// Round each split-K partial to BF16 before its ordered FP32 reduction.
+pub fn matmul_bf16_rounded_parallel_k<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>,
+    out: RudaTensor<R>, parts: usize) -> Result<RudaTensor<R>, MatmulSetupError> {
+    split_k(a, b, out, parts, true)
+}
+
+fn split_k<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>, out: RudaTensor<R>,
+    parts: usize, rounded_partials: bool) -> Result<RudaTensor<R>, MatmulSetupError> {
     if a.dtype != DType::BF16 || b.dtype != DType::BF16 || out.dtype != DType::BF16
         || a.qparams.is_some() || b.qparams.is_some() || out.qparams.is_some()
         || a.meta.num_dims()!=2 || b.meta.num_dims()!=2 || out.meta.num_dims()!=2
-        || a.meta.shape()[0]!=512 || !matches!(a.meta.shape()[1],3584|18944)
-        || b.meta.shape()[..]!=[a.meta.shape()[1],3584]
-        || out.meta.shape()[..]!=[512,3584] || out.meta.strides()[..]!=[3584,1]
+        || !matches!(parts, 3 | 5) || (!rounded_partials && parts != 3)
+        || b.meta.shape()[0]!=a.meta.shape()[1]
+        || out.meta.shape()[..]!=[a.meta.shape()[0],b.meta.shape()[1]]
+        || out.meta.strides()[..]!=[b.meta.shape()[1],1]
         || a.meta.strides()[1]!=1 || (b.meta.strides()[0]!=1 && b.meta.strides()[1]!=1)
         || !a.client.same_execution_queue(&b.client) || !a.client.same_execution_queue(&out.client)
     {
-        return Err(MatmulSetupError::InvalidConfig(Box::new("unsupported BF16 serial-K3 projection".to_string())));
+        return Err(MatmulSetupError::InvalidConfig(Box::new("unsupported BF16 split-K projection".to_string())));
     }
-    let k = a.meta.shape()[1];
-    let block = k.div_ceil(3*64)*64;
-    let partial = empty_device_contiguous_dtype(a.client.clone(),a.device.clone(),Shape::from([3,512,3584]),DType::F32);
-    if !super::training_gemm::serial_k3(&a, &b, &partial) {
-        for part in 0..3 {
+    let (m, k, n) = (a.meta.shape()[0], a.meta.shape()[1], b.meta.shape()[1]);
+    let block = k.div_ceil(parts*64)*64;
+    if m == 0 || n == 0 || k == 0 || k % 64 != 0 || k <= (parts-1)*block
+        || m.checked_mul(n).and_then(|v| v.checked_mul(parts)).is_none_or(|v| v > u32::MAX as usize)
+    {
+        return Err(MatmulSetupError::InvalidConfig(Box::new("invalid BF16 split-K extent".to_string())));
+    }
+    let partial = empty_device_contiguous_dtype(a.client.clone(),a.device.clone(),Shape::from([parts,m,n]),
+        if rounded_partials { DType::BF16 } else { DType::F32 });
+    let element_bytes = if rounded_partials { 2 } else { 4 };
+    if !super::training_gemm::split_k(&a, &b, &partial, parts, block) {
+        for part in 0..parts {
             let start = part*block;
             let len = (k-start).min(block);
             let mut left = a.clone();
@@ -64,7 +83,7 @@ pub fn matmul_bf16_serial_k3<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>,
             right.handle.offset_start = Some(b.handle.offset_start.unwrap_or(0)+(start*b.meta.strides()[0]*2) as u64);
             let mut output = partial.clone();
             output.meta.remove(0);
-            output.handle.offset_start = Some(partial.handle.offset_start.unwrap_or(0)+(part*512*3584*4) as u64);
+            output.handle.offset_start = Some(partial.handle.offset_start.unwrap_or(0)+(part*m*n*element_bytes) as u64);
             if super::matmul_bf16_training(&left, &right, &output) { continue; }
             match launch_matmul_with_precision(&Strategy::DoubleAsyncCyclicCmma(Default::default()),
                 left.clone(),right.clone(),output.clone(),F32MathMode::Strict) {
@@ -76,8 +95,13 @@ pub fn matmul_bf16_serial_k3<R: Runtime>(a: RudaTensor<R>, b: RudaTensor<R>,
             }
         }
     }
-    serial_reduce::launch::<R>(&a.client,RudaCount::Static((512*3584/128) as u32,1,1),RudaDim::new_1d(128),
-        partial.into_array_arg(),out.clone().into_array_arg(),DType::BF16.into());
+    if rounded_partials {
+        rounded_parallel_reduce::launch::<R>(&a.client,RudaCount::Static((m*n).div_ceil(128) as u32,1,1),RudaDim::new_1d(128),
+            partial.into_array_arg(),out.clone().into_array_arg(),parts,DType::BF16.into());
+    } else {
+        serial_reduce::launch::<R>(&a.client,RudaCount::Static((m*n).div_ceil(128) as u32,1,1),RudaDim::new_1d(128),
+            partial.into_array_arg(),out.clone().into_array_arg(),DType::BF16.into());
+    }
     Ok(out)
 }
 
@@ -119,6 +143,18 @@ fn parallel_reduce<F: Float>(partial: &Array<f32>, out: &mut Array<F>, #[define(
         let mut value = partial[pos];
         #[unroll]
         for part in 1usize..6 { value += partial[part*out.len()+pos]; }
+        out[pos] = F::cast_from(value);
+    }
+}
+
+#[ruda(launch)]
+fn rounded_parallel_reduce<F: Float>(partial: &Array<F>, out: &mut Array<F>,
+    #[comptime] parts: usize, #[define(F)] _dtype: StorageType) {
+    let pos = ABSOLUTE_POS as usize;
+    if pos < out.len() {
+        let mut value = f32::cast_from(partial[pos]);
+        #[unroll]
+        for part in 1usize..parts { value += f32::cast_from(partial[part*out.len()+pos]); }
         out[pos] = F::cast_from(value);
     }
 }

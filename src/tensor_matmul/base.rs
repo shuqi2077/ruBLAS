@@ -251,6 +251,9 @@ pub fn matmul_with_precision<R: Runtime>(
             if super::skinny::try_launch(&lhs, &rhs, &out) {
                 return Ok(out);
             }
+            if super::f32_tiled::try_launch(&lhs, &rhs, &out, f32_math)? {
+                return Ok(out);
+            }
             if super::accurate::try_launch(&lhs, &rhs, &out, f32_math)? {
                 return Ok(out);
             }
