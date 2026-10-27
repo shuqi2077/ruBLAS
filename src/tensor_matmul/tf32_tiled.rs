@@ -47,8 +47,8 @@ fn tiled(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>, out
     let bstage = comptime!(if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) });
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(astage * 2, 32usize);
     let mut sb = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(bstage * 2, 32usize);
-    let mut acc = Array::<Vector<f32, Const<4>>>::new(mt * ntile);
-    #[unroll] for i in 0usize..(mt * ntile) { acc[i] = Vector::new(0.0f32); }
+    let mut acc = Sequence::<Vector<f32, Const<4>>>::new();
+    #[unroll] for _ in 0usize..(mt * ntile) { acc.push(Vector::new(0.0f32)); }
     let def = cmma::MmaDefinition::<tf32, tf32, f32>::new(16usize, 8usize, 8usize);
     load(a, b, &mut sa, &mut sb, row, col, 0usize, 0usize, lda, ldb, a_batch, b_batch,
         ta, nt, bm, bn, bk, asynchronous, m, n, 128usize);
