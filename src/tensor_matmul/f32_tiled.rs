@@ -70,9 +70,9 @@ fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
     if math == F32MathMode::AllowTf32 {
         return Ok(super::tf32_tiled::launch(a, b, out, m, n, k, lda, ldb, sa, sb, ta, nt, batch));
     }
-    let bm = if m % 128 == 0 { 128 } else if m >= 64 { 64 } else { 32 };
-    let bn = if n % 128 == 0 { 128 } else if n >= 64 { 64 } else { 32 };
-    let bk = if k % 32 == 0 { 32 } else if k % 16 == 0 { 16 } else { 8 };
+    let bm = if m % 128 == 0 { 128 } else if m % 64 == 0 || m >= 128 { 64 } else { 32 };
+    let bn = if n % 128 == 0 { 128 } else if n % 64 == 0 || n >= 128 { 64 } else { 32 };
+    let bk = if m.min(n) < 128 { 8 } else if k % 32 == 0 { 32 } else if k % 16 == 0 { 16 } else { 8 };
     let a_stage = if ta { bk * (bm / 4 + 1) } else { bm * (bk / 4 + 1) };
     let b_stage = if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) };
     let hw = &a.client.properties().hardware;
@@ -165,6 +165,8 @@ fn tiled<OS: Size>(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
     let bstage = comptime!(if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) });
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(astage * 2, 32usize);
     let mut sb = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(bstage * 2, 32usize);
+    let scalar_a = sa.to_slice().with_vector_size::<Const<1>>();
+    let scalar_b = sb.to_slice().with_vector_size::<Const<1>>();
     let mut acc = Array::<f32>::new(tm * tn);
     #[unroll] for i in 0usize..(tm * tn) { acc[i] = 0.0f32; }
     load(a, b, &mut sa, &mut sb, row, col, 0usize, 0usize, lda, ldb, a_batch, b_batch, ta, nt, bm, bn, bk, asynchronous, m, n, 256usize);
@@ -184,14 +186,14 @@ fn tiled<OS: Size>(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
             #[unroll]
             for i in 0usize..tm {
                 let r = ty * comptime!(tm.min(4)) + comptime!(i % 4 + i / 4 * 64);
-                if comptime!(ta) { ar[i] = sa[bank * astage + inner * (bm / 4 + 1) + r / 4][r % 4]; }
-                else { ar[i] = sa[bank * astage + r * (bk / 4 + 1) + inner / 4][inner % 4]; }
+                if comptime!(ta) { ar[i] = scalar_a[bank * astage * 4 + inner * (bm + 4) + r][0usize]; }
+                else { ar[i] = scalar_a[bank * astage * 4 + r * (bk + 4) + inner][0usize]; }
             }
             #[unroll]
             for j in 0usize..tn {
                 let c = tx * comptime!(tn.min(4)) + comptime!(j % 4 + j / 4 * 64);
-                if comptime!(nt) { br[j] = sb[bank * bstage + c * (bk / 4 + 1) + inner / 4][inner % 4]; }
-                else { br[j] = sb[bank * bstage + inner * (bn / 4 + 1) + c / 4][c % 4]; }
+                if comptime!(nt) { br[j] = scalar_b[bank * bstage * 4 + c * (bk + 4) + inner][0usize]; }
+                else { br[j] = scalar_b[bank * bstage * 4 + inner * (bn + 4) + c][0usize]; }
             }
             #[unroll] for i in 0usize..tm {
                 #[unroll] for j in 0usize..tn { acc[i * tn + j] = fma(ar[i], br[j], acc[i * tn + j]); }

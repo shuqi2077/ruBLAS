@@ -47,6 +47,8 @@ fn tiled(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>, out
     let bstage = comptime!(if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) });
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(astage * 2, 32usize);
     let mut sb = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(bstage * 2, 32usize);
+    let scalar_a = sa.to_slice().with_vector_size::<Const<1>>();
+    let scalar_b = sb.to_slice().with_vector_size::<Const<1>>();
     let mut acc = Sequence::<Vector<f32, Const<4>>>::new();
     #[unroll] for _ in 0usize..(mt * ntile) { acc.push(Vector::new(0.0f32)); }
     let def = cmma::MmaDefinition::<tf32, tf32, f32>::new(16usize, 8usize, 8usize);
@@ -70,8 +72,8 @@ fn tiled(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>, out
                     let r = wm + i * 16 + lane / 4 + (v % 2) * 8;
                     let c = step * 8 + lane % 4 + (v / 2) * 4;
                     let mut value = 0.0f32;
-                    if comptime!(ta) { value = sa[bank * astage + c * (bm / 4 + 1) + r / 4][r % 4]; }
-                    else { value = sa[bank * astage + r * (bk / 4 + 1) + c / 4][c % 4]; }
+                    if comptime!(ta) { value = scalar_a[bank * astage * 4 + c * (bm + 4) + r][0usize]; }
+                    else { value = scalar_a[bank * astage * 4 + r * (bk + 4) + c][0usize]; }
                     fragment[v] = tf32::cast_from(value);
                 }
                 ar[i] = fragment;
@@ -82,8 +84,8 @@ fn tiled(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>, out
                     let r = step * 8 + lane % 4 + v * 4;
                     let c = wn + j * 8 + lane / 4;
                     let mut value = 0.0f32;
-                    if comptime!(nt) { value = sb[bank * bstage + c * (bk / 4 + 1) + r / 4][r % 4]; }
-                    else { value = sb[bank * bstage + r * (bn / 4 + 1) + c / 4][c % 4]; }
+                    if comptime!(nt) { value = scalar_b[bank * bstage * 4 + c * (bk + 4) + r][0usize]; }
+                    else { value = scalar_b[bank * bstage * 4 + r * (bn + 4) + c][0usize]; }
                     br[v] = tf32::cast_from(value);
                 }
                 #[unroll] for i in 0usize..mt {
