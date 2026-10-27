@@ -3,6 +3,8 @@ mod skinny;
 mod accurate;
 #[allow(unsafe_code)]
 mod f32_tiled;
+#[allow(unsafe_code)]
+mod tf32_tiled;
 mod sliced;
 mod training_tune;
 mod training_gemm;
