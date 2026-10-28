@@ -7,9 +7,9 @@ use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_cop
 // * cp.async global->shared copies with `stages` buffers in flight.
 // * XOR-swizzled shared tiles (no padding) so every fragment read is free of
 //   bank conflicts: A fragments use 64-bit loads, B fragments 128-bit loads.
-// * Full long-K tiles load A as four raw 32-bit words with ldmatrix.x4,
+// * Tiles load A as four raw 32-bit words with ldmatrix.x4,
 //   retaining the native MMA register grouping and natural K order.
-// * On the short-K/tail path the K index in each k8 step is permuted for A and B
+// * On the fallback load path the K index in each k8 step is permuted for A and B
 //   (logical k=t -> physical 2t, logical k=t+4 -> physical 2t+1), which is
 //   exact because the MMA sums over K. The N index of every warp tile is
 //   permuted (logical tile j, column g -> physical q*32 + g*4 + j%4) so that one
@@ -18,7 +18,8 @@ use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_cop
 #[derive(Clone, Copy)]
 struct Config { bm: usize, bn: usize, warp_m: usize, warp_n: usize, stages: usize, resident: usize, efficiency: f64 }
 
-const CONFIGS: [Config; 3] = [
+const CONFIGS: [Config; 4] = [
+    Config { bm: 256, bn: 128, warp_m: 64, warp_n: 64, stages: 3, resident: 1, efficiency: 1.0 },
     Config { bm: 128, bn: 128, warp_m: 32, warp_n: 64, stages: 2, resident: 2, efficiency: 1.0 },
     Config { bm: 128, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 2, efficiency: 0.85 },
     Config { bm: 64, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 3, efficiency: 0.55 },
@@ -82,6 +83,7 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
     let sms = hw.num_streaming_multiprocessors.unwrap_or(108).max(1) as usize;
     let mut best: Option<(f64, Config)> = None;
     for config in CONFIGS {
+        if config.bm == 256 && (k < 1024 || m % config.bm != 0 || n % config.bn != 0) { continue; }
         let threads = config.bm / config.warp_m * (config.bn / config.warp_n) * 32;
         let shared = config.stages * (config.bm * 32 + 32 * config.bn) * 4;
         let tiles = m.div_ceil(config.bm) * n.div_ceil(config.bn);
@@ -93,8 +95,8 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
         if best.is_none_or(|(value, _)| cost < value) { best = Some((cost, config)); }
     }
     let Some((_, mut config)) = best else { return false; };
-    let matrix_load = k >= 1024 && config.bm >= 128 && m % config.bm == 0 && n % config.bn == 0;
-    if matrix_load { config.warp_m = 64; }
+    let matrix_load = true;
+    if k >= 1024 && config.bm >= 128 && m % config.bm == 0 && n % config.bn == 0 { config.warp_m = 64; }
     let tiles_m = m.div_ceil(config.bm);
     let group = if tiles_m % 8 == 0 { 8 } else { tiles_m };
     let threads = config.bm / config.warp_m * (config.bn / config.warp_n) * 32;
