@@ -18,8 +18,7 @@ use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_cop
 #[derive(Clone, Copy)]
 struct Config { bm: usize, bn: usize, warp_m: usize, warp_n: usize, stages: usize, resident: usize, efficiency: f64 }
 
-const CONFIGS: [Config; 4] = [
-    Config { bm: 256, bn: 128, warp_m: 64, warp_n: 64, stages: 3, resident: 1, efficiency: 1.0 },
+const CONFIGS: [Config; 3] = [
     Config { bm: 128, bn: 128, warp_m: 32, warp_n: 64, stages: 2, resident: 2, efficiency: 1.0 },
     Config { bm: 128, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 2, efficiency: 0.85 },
     Config { bm: 64, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 3, efficiency: 0.55 },
@@ -83,7 +82,6 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
     let sms = hw.num_streaming_multiprocessors.unwrap_or(108).max(1) as usize;
     let mut best: Option<(f64, Config)> = None;
     for config in CONFIGS {
-        if config.bm == 256 && (k < 1024 || m % config.bm != 0 || n % config.bn != 0) { continue; }
         let threads = config.bm / config.warp_m * (config.bn / config.warp_n) * 32;
         let shared = config.stages * (config.bm * 32 + 32 * config.bn) * 4;
         let tiles = m.div_ceil(config.bm) * n.div_ceil(config.bn);
