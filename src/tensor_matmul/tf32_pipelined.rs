@@ -189,7 +189,7 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     let b_col = wn / 4 + (g ^ (t * 2));
     let b_base = t * 2 * b_row + b_col;
     let mut bank = 0usize;
-    let mut write_bank = comptime!(stages - 1);
+    let mut write_bank = usize::cast_from(stages - 1);
     for block in 0usize..blocks {
         wait_copy_group(comptime!((stages - 2) as u32));
         sync_ruda();
