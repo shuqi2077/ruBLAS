@@ -68,10 +68,13 @@ fn load_stage(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>
     row: usize, col: usize, block: usize, bank: usize,
     #[comptime] m: usize, #[comptime] n: usize, #[comptime] lda: usize, #[comptime] ldb: usize,
     #[comptime] a_batch: usize, #[comptime] b_batch: usize,
-    #[comptime] bm: usize, #[comptime] bn: usize, #[comptime] threads: usize) {
+    #[comptime] bm: usize, #[comptime] bn: usize, #[comptime] threads: usize,
+    #[comptime] copy_group: usize, #[comptime] copy_groups: usize) {
     let batch = RUDA_POS_Y as usize;
+    let a_copies = comptime!((bm * 8).div_ceil(threads));
+    let a_per_group = comptime!(a_copies.div_ceil(copy_groups));
     #[unroll]
-    for i in 0usize..comptime!((bm * 8).div_ceil(threads)) {
+    for i in comptime!((copy_group * a_per_group).min(a_copies))..comptime!(((copy_group + 1) * a_per_group).min(a_copies)) {
         let p = UNIT_POS as usize + i * threads;
         if p < bm * 8 {
             let r = p / 8;
@@ -88,8 +91,10 @@ fn load_stage(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>
         }
     }
     let quads = comptime!(bn / 4);
+    let b_copies = comptime!((bn * 8).div_ceil(threads));
+    let b_per_group = comptime!(b_copies.div_ceil(copy_groups));
     #[unroll]
-    for i in 0usize..comptime!((bn * 8).div_ceil(threads)) {
+    for i in comptime!((copy_group * b_per_group).min(b_copies))..comptime!(((copy_group + 1) * b_per_group).min(b_copies)) {
         let p = UNIT_POS as usize + i * threads;
         if p < bn * 8 {
             let r = p / quads;
@@ -105,6 +110,20 @@ fn load_stage(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>
             }
         }
     }
+}
+
+#[ruda]
+fn load_a_fragment(pairs: &Slice<Vector<f32, Const<2>>>, base: usize, chunk: usize,
+    #[comptime] i: usize) -> Vector<tf32, Const<4>> {
+    let index = base + i * 512 + chunk * 4;
+    let low = pairs[index / 2];
+    let high = pairs[(index + 256) / 2];
+    let mut fragment = Vector::<tf32, Const<4>>::empty();
+    fragment[0usize] = tf32::cast_from(low[0usize]);
+    fragment[1usize] = tf32::cast_from(high[0usize]);
+    fragment[2usize] = tf32::cast_from(low[1usize]);
+    fragment[3usize] = tf32::cast_from(high[1usize]);
+    fragment
 }
 
 #[ruda(launch_unchecked)]
@@ -144,7 +163,7 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     #[unroll]
     for stage in 0usize..(stages - 1) {
         if comptime!(stage < k / 32) {
-            load_stage(a, b, &mut sa, &mut sb, row, col, stage, stage, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads);
+            load_stage(a, b, &mut sa, &mut sb, row, col, stage, stage, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads, 0usize, 1usize);
         }
         commit_copy_group();
     }
@@ -158,43 +177,48 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
         wait_copy_group(comptime!((stages - 2) as u32));
         sync_ruda();
         let next = block + stages - 1;
-        if next < blocks {
-            load_stage(a, b, &mut sa, &mut sb, row, col, next, next % stages, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads);
+        let a_read_base = bank * (a_stage * 4) + a_base;
+        let b_read_base = bank * b_stage + t * 2 * b_row + b_col;
+        let mut ar = Sequence::<Vector<tf32, Const<4>>>::new();
+        #[unroll] for i in 0usize..mt {
+            ar.push(load_a_fragment(&pairs, a_read_base, xa + t / 2, i));
         }
-        commit_copy_group();
         #[unroll]
         for s in 0usize..4 {
-            let mut ar = Array::<Vector<tf32, Const<4>>>::new(mt);
-            let chunk = ((s * 2) ^ xa) + t / 2;
-            #[unroll]
-            for i in 0usize..mt {
-                let index = bank * (a_stage * 4) + a_base + i * 512 + chunk * 4;
-                let low = pairs[index / 2];
-                let high = pairs[(index + 256) / 2];
-                let mut fragment = Vector::<tf32, Const<4>>::empty();
-                fragment[0usize] = tf32::cast_from(low[0usize]);
-                fragment[1usize] = tf32::cast_from(high[0usize]);
-                fragment[2usize] = tf32::cast_from(low[1usize]);
-                fragment[3usize] = tf32::cast_from(high[1usize]);
-                ar[i] = fragment;
+            if next < blocks {
+                load_stage(a, b, &mut sa, &mut sb, row, col, next, next % stages, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads, s, 4usize);
             }
+            if comptime!(s + 1 < 4) {
+                let chunk = (((s + 1) * 2) ^ xa) + t / 2;
+                #[unroll] for i in 0usize..mt {
+                    ar.push(load_a_fragment(&pairs, a_read_base, chunk, i));
+                }
+            }
+            let b_step = b_read_base + s * 8 * b_row;
+            let mut first = Sequence::<Vector<f32, Const<4>>>::new();
+            let mut second = Sequence::<Vector<f32, Const<4>>>::new();
+            first.push(sb[b_step]);
+            second.push(sb[b_step + b_row]);
             #[unroll]
             for q in 0usize..quads {
-                let index = bank * b_stage + (s * 8 + t * 2) * b_row + b_col + q * 8;
-                let first = sb[index];
-                let second = sb[index + b_row];
+                if comptime!(q + 1 < quads) {
+                    let index = b_step + (q + 1) * 8;
+                    first.push(sb[index]);
+                    second.push(sb[index + b_row]);
+                }
                 #[unroll]
                 for jj in 0usize..4 {
                     let mut br = Vector::<tf32, Const<2>>::empty();
-                    br[0usize] = tf32::cast_from(first[jj]);
-                    br[1usize] = tf32::cast_from(second[jj]);
+                    br[0usize] = tf32::cast_from(first[q][jj]);
+                    br[1usize] = tf32::cast_from(second[q][jj]);
                     #[unroll]
                     for i in 0usize..mt {
-                        def.execute_vectors_inplace(&ar[i], &br, acc.index_mut(i * ntile + q * 4 + jj));
+                        def.execute_vectors_inplace(&ar[s * mt + i], &br, acc.index_mut(i * ntile + q * 4 + jj));
                     }
                 }
             }
         }
+        commit_copy_group();
     }
     wait_copy_group(0u32);
     let base = RUDA_POS_Y as usize * m * n;
