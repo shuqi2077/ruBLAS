@@ -17,8 +17,8 @@ use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_cop
 struct Config { bm: usize, bn: usize, warp_m: usize, warp_n: usize, stages: usize, resident: usize, efficiency: f64 }
 
 const CONFIGS: [Config; 3] = [
-    Config { bm: 128, bn: 128, warp_m: 32, warp_n: 64, stages: 2, resident: 2, efficiency: 1.0 },
-    Config { bm: 128, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 2, efficiency: 0.85 },
+    Config { bm: 128, bn: 128, warp_m: 64, warp_n: 64, stages: 2, resident: 2, efficiency: 1.0 },
+    Config { bm: 128, bn: 64, warp_m: 64, warp_n: 32, stages: 3, resident: 2, efficiency: 0.85 },
     Config { bm: 64, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 3, efficiency: 0.55 },
 ];
 
@@ -34,7 +34,7 @@ mod tests {
             assert_eq!(config.bm * 8 % threads, 0);
             assert_eq!(config.bn * 8 % threads, 0);
             assert_eq!(threads % 32, 0);
-            assert_eq!(threads % (quads * 8), 0);
+            assert_eq!(threads % (quads * 2), 0);
             for pitch in [config.bm + 4, config.bn + 12, 1024] {
                 for thread in 0..threads {
                     let a_base = thread / 8 * pitch + thread % 8;
@@ -49,7 +49,8 @@ mod tests {
                     for i in 0..config.bn * 8 / threads {
                         let p = thread + i * threads;
                         assert_eq!(b_base + i * (threads / quads) * pitch, p / quads * pitch + p % quads);
-                        assert_eq!(b_shared + i * threads, p / quads * quads + (p % quads ^ (p / quads / 2 % 4) * 2));
+                        let phase = (i * threads / (quads * 2) % 4) * 2;
+                        assert_eq!((b_shared ^ phase) + i * threads, p / quads * quads + (p % quads ^ (p / quads / 2 % 4) * 2));
                     }
                 }
             }
@@ -124,7 +125,8 @@ fn load_stage(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>
     if comptime!(n % bn != 0) { b_valid = b_col < n; }
     #[unroll]
     for i in 0usize..comptime!(bn * 8 / threads) {
-        let target = b_shared + i * threads;
+        let phase = comptime!((i * threads / ((bn / 4) * 2) % 4) * 2);
+        let target = (b_shared ^ phase) + i * threads;
         let source = b_global + i * ((threads / (bn / 4)) * (ldb / 4));
         if b_valid {
             copy_async(&b.slice(source, source + 1), &mut sb.slice_mut(target, target + 1), 4u32);
