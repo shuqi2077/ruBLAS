@@ -42,13 +42,15 @@ mod tests {
                 for thread in 0..threads {
                     let a_base = thread / 8 * pitch + thread % 8;
                     let b_base = thread / quads * pitch + thread % quads;
-                    let a_shared = thread / 8 * 8 + (thread % 8 ^ (thread / 8 % 4) * 2);
+                    let a_swizzle = if matrix_load { thread / 8 % 8 } else { (thread / 8 % 4) * 2 };
+                    let a_shared = thread / 8 * 8 + (thread % 8 ^ a_swizzle);
                     let divisor = if matrix_load { 1 } else { 2 };
                     let b_shared = thread / quads * quads + (thread % quads ^ (thread / quads / divisor % 4) * 2);
                     for i in 0..config.bm * 8 / threads {
                         let p = thread + i * threads;
                         assert_eq!(a_base + i * (threads / 8) * pitch, p / 8 * pitch + p % 8);
-                        assert_eq!(a_shared + i * threads, p / 8 * 8 + (p % 8 ^ (p / 8 % 4) * 2));
+                        let swizzle = if matrix_load { p / 8 % 8 } else { (p / 8 % 4) * 2 };
+                        assert_eq!(a_shared + i * threads, p / 8 * 8 + (p % 8 ^ swizzle));
                     }
                     for i in 0..config.bn * 8 / threads {
                         let p = thread + i * threads;
@@ -174,7 +176,9 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     let b_copy_col = col + (thread % b_row) * 4;
     let a_source = RUDA_POS_Y as usize * (a_batch / 4) + a_copy_row * (lda / 4) + thread % 8;
     let b_source = RUDA_POS_Y as usize * (b_batch / 4) + (thread / b_row) * (ldb / 4) + b_copy_col / 4;
-    let a_target = (thread / 8) * 8 + ((thread % 8) ^ ((thread / 8 % 4) * 2));
+    let mut a_swizzle = (thread / 8 % 4) * 2;
+    if comptime!(matrix_load) { a_swizzle = thread / 8 % 8; }
+    let a_target = (thread / 8) * 8 + ((thread % 8) ^ a_swizzle);
     let b_divisor = comptime!(if matrix_load { 1usize } else { 2usize });
     let b_target = (thread / b_row) * b_row + ((thread % b_row) ^ ((thread / b_row / b_divisor % 4) * 2));
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(a_stage * stages, 32usize);
@@ -195,7 +199,7 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     // k8 step have (row / 2) % 4 == t.
     let xa = (g % 4) * 2;
     let a_base = (wm + g) * 16 + t % 2;
-    let a_matrix_base = (wm + lane % 16) * 8 + ((lane / 16) ^ ((lane % 4) * 2));
+    let a_matrix_base = (wm + lane % 16) * 8 + ((lane / 16) ^ (lane % 8));
     let b_col = wn / 4 + (g ^ (t * 2));
     let b_base = t * b_divisor * b_row + b_col;
     let mut bank = 0usize;
