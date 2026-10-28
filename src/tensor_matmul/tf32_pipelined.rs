@@ -16,10 +16,9 @@ use ruda_kernel::dsl::prelude::barrier::{copy_async, commit_copy_group, wait_cop
 #[derive(Clone, Copy)]
 struct Config { bm: usize, bn: usize, warp_m: usize, warp_n: usize, stages: usize, resident: usize, efficiency: f64 }
 
-const CONFIGS: [Config; 4] = [
-    Config { bm: 256, bn: 128, warp_m: 64, warp_n: 64, stages: 3, resident: 1, efficiency: 1.0 },
-    Config { bm: 128, bn: 128, warp_m: 64, warp_n: 64, stages: 4, resident: 1, efficiency: 0.9 },
-    Config { bm: 128, bn: 64, warp_m: 64, warp_n: 32, stages: 3, resident: 2, efficiency: 0.75 },
+const CONFIGS: [Config; 3] = [
+    Config { bm: 128, bn: 128, warp_m: 32, warp_n: 64, stages: 2, resident: 2, efficiency: 1.0 },
+    Config { bm: 128, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 2, efficiency: 0.85 },
     Config { bm: 64, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 3, efficiency: 0.55 },
 ];
 
@@ -46,8 +45,9 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
         let tiles = m.div_ceil(config.bm) * n.div_ceil(config.bn);
         if threads as u32 > hw.max_units_per_ruda || shared > hw.max_shared_memory_size
             || tiles > hw.max_ruda_count.0 as usize { continue; }
-        let waves = (tiles * batch).div_ceil(sms * config.resident);
-        let cost = (waves * config.resident * config.bm * config.bn) as f64 / config.efficiency;
+        let resident = config.resident.min(hw.max_shared_memory_size / shared).max(1);
+        let waves = (tiles * batch).div_ceil(sms * resident);
+        let cost = (waves * resident * config.bm * config.bn) as f64 / config.efficiency;
         if best.is_none_or(|(value, _)| cost < value) { best = Some((cost, config)); }
     }
     let Some((_, config)) = best else { return false; };
