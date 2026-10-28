@@ -14,6 +14,9 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
         cd_type: ElemType::Float(FloatKind::F32).into(), m: 16, n: 8, k: 8 })
         || hw.plane_size_min != 32 || hw.plane_size_max != 32 || hw.max_units_per_ruda < 128
     { return false; }
+    if !ta && !nt && super::tf32_pipelined::launch(a, b, out, m, n, k, lda, ldb, a_batch, b_batch, batch) {
+        return true;
+    }
     let bm = if m >= 128 && n >= 128 { 128 } else { 64 };
     let bn = 64;
     let bk = if k % 32 == 0 { 32 } else if k % 16 == 0 { 16 } else { 8 };

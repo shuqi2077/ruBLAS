@@ -5,6 +5,8 @@ mod accurate;
 mod f32_tiled;
 #[allow(unsafe_code)]
 mod tf32_tiled;
+#[allow(unsafe_code)]
+mod tf32_pipelined;
 mod sliced;
 mod training_tune;
 mod training_gemm;

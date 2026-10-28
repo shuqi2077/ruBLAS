@@ -70,12 +70,18 @@ fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
     if math == F32MathMode::AllowTf32 {
         return Ok(super::tf32_tiled::launch(a, b, out, m, n, k, lda, ldb, sa, sb, ta, nt, batch));
     }
-    let bm = if m % 128 == 0 { 128 } else if m % 64 == 0 || m >= 128 { 64 } else { 32 };
-    let bn = if n % 128 == 0 { 128 } else if n % 64 == 0 || n >= 128 { 64 } else { 32 };
-    let bk = if m.min(n) < 128 { 8 } else if k % 32 == 0 { 32 } else if k % 16 == 0 { 16 } else { 8 };
+    let hw = &a.client.properties().hardware;
+    let mut bm = if m % 128 == 0 { 128 } else if m % 64 == 0 || m >= 128 { 64 } else { 32 };
+    let mut bn = if n % 128 == 0 { 128 } else if n % 64 == 0 || n >= 128 { 64 } else { 32 };
+    // Small problems: shrink tiles until the grid covers the device, otherwise
+    // a 128x128 output runs serially on a single SM.
+    let sms = hw.num_streaming_multiprocessors.unwrap_or(108).max(1) as usize;
+    while m.div_ceil(bm) * n.div_ceil(bn) * batch < sms && (bm > 32 || bn > 32) {
+        if bm >= bn && bm > 32 { bm /= 2; } else { bn /= 2; }
+    }
+    let bk = if m.min(n) < 128 || bm.min(bn) < 64 { 8 } else if k % 32 == 0 { 32 } else if k % 16 == 0 { 16 } else { 8 };
     let a_stage = if ta { bk * (bm / 4 + 1) } else { bm * (bk / 4 + 1) };
     let b_stage = if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) };
-    let hw = &a.client.properties().hardware;
     if hw.max_units_per_ruda < 256 || hw.max_shared_memory_size < (a_stage + b_stage) * 32
         || m.div_ceil(bm) * n.div_ceil(bn) > hw.max_ruda_count.0 as usize || batch > hw.max_ruda_count.1 as usize
     { return Ok(false); }
