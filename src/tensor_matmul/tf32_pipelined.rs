@@ -22,6 +22,41 @@ const CONFIGS: [Config; 3] = [
     Config { bm: 64, bn: 64, warp_m: 32, warp_n: 32, stages: 3, resident: 3, efficiency: 0.55 },
 ];
 
+#[cfg(test)]
+mod tests {
+    use super::CONFIGS;
+
+    #[test]
+    fn affine_copy_offsets_preserve_every_swizzled_element() {
+        for config in CONFIGS {
+            let threads = config.bm / config.warp_m * (config.bn / config.warp_n) * 32;
+            let quads = config.bn / 4;
+            assert_eq!(config.bm * 8 % threads, 0);
+            assert_eq!(config.bn * 8 % threads, 0);
+            assert_eq!(threads % 32, 0);
+            assert_eq!(threads % (quads * 8), 0);
+            for pitch in [config.bm + 4, config.bn + 12, 1024] {
+                for thread in 0..threads {
+                    let a_base = thread / 8 * pitch + thread % 8;
+                    let b_base = thread / quads * pitch + thread % quads;
+                    let a_shared = thread / 8 * 8 + (thread % 8 ^ (thread / 8 % 4) * 2);
+                    let b_shared = thread / quads * quads + (thread % quads ^ (thread / quads / 2 % 4) * 2);
+                    for i in 0..config.bm * 8 / threads {
+                        let p = thread + i * threads;
+                        assert_eq!(a_base + i * (threads / 8) * pitch, p / 8 * pitch + p % 8);
+                        assert_eq!(a_shared + i * threads, p / 8 * 8 + (p % 8 ^ (p / 8 % 4) * 2));
+                    }
+                    for i in 0..config.bn * 8 / threads {
+                        let p = thread + i * threads;
+                        assert_eq!(b_base + i * (threads / quads) * pitch, p / quads * pitch + p % quads);
+                        assert_eq!(b_shared + i * threads, p / quads * quads + (p % quads ^ (p / quads / 2 % 4) * 2));
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
     m: usize, n: usize, k: usize, lda: usize, ldb: usize, a_batch: usize, b_batch: usize,
@@ -65,44 +100,36 @@ pub(super) fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &Rud
 #[ruda]
 fn load_stage(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     sa: &mut SharedMemory<Vector<f32, Const<4>>>, sb: &mut SharedMemory<Vector<f32, Const<4>>>,
-    row: usize, col: usize, block: usize, bank: usize,
+    a_source: usize, b_source: usize, a_target: usize, b_target: usize,
+    a_row: usize, b_col: usize, block: usize, bank: usize,
     #[comptime] m: usize, #[comptime] n: usize, #[comptime] lda: usize, #[comptime] ldb: usize,
-    #[comptime] a_batch: usize, #[comptime] b_batch: usize,
     #[comptime] bm: usize, #[comptime] bn: usize, #[comptime] threads: usize) {
-    let batch = RUDA_POS_Y as usize;
+    let a_global = a_source + block * 8;
+    let b_global = b_source + block * (32 * (ldb / 4));
+    let a_shared = bank * (bm * 8) + a_target;
+    let b_shared = bank * (bn * 8) + b_target;
     #[unroll]
-    for i in 0usize..comptime!((bm * 8).div_ceil(threads)) {
-        let p = UNIT_POS as usize + i * threads;
-        if p < bm * 8 {
-            let r = p / 8;
-            let c = p % 8;
-            let target = bank * (bm * 8) + r * 8 + (c ^ ((r % 4) * 2));
-            let source = batch * (a_batch / 4) + (row + r) * (lda / 4) + block * 8 + c;
-            let mut valid = true;
-            if comptime!(m % bm != 0) { valid = row + r < m; }
-            if valid {
-                copy_async(&a.slice(source, source + 1), &mut sa.slice_mut(target, target + 1), 4u32);
-            } else {
-                sa[target] = Vector::new(0.0f32);
-            }
+    for i in 0usize..comptime!(bm * 8 / threads) {
+        let target = a_shared + i * threads;
+        let source = a_global + i * ((threads / 8) * (lda / 4));
+        let mut valid = true;
+        if comptime!(m % bm != 0) { valid = a_row + i * (threads / 8) < m; }
+        if valid {
+            copy_async(&a.slice(source, source + 1), &mut sa.slice_mut(target, target + 1), 4u32);
+        } else {
+            sa[target] = Vector::new(0.0f32);
         }
     }
-    let quads = comptime!(bn / 4);
+    let mut b_valid = true;
+    if comptime!(n % bn != 0) { b_valid = b_col < n; }
     #[unroll]
-    for i in 0usize..comptime!((bn * 8).div_ceil(threads)) {
-        let p = UNIT_POS as usize + i * threads;
-        if p < bn * 8 {
-            let r = p / quads;
-            let c = p % quads;
-            let target = bank * (bn * 8) + r * quads + (c ^ ((r / 2 % 4) * 2));
-            let source = batch * (b_batch / 4) + (block * 32 + r) * (ldb / 4) + col / 4 + c;
-            let mut valid = true;
-            if comptime!(n % bn != 0) { valid = col + c * 4 < n; }
-            if valid {
-                copy_async(&b.slice(source, source + 1), &mut sb.slice_mut(target, target + 1), 4u32);
-            } else {
-                sb[target] = Vector::new(0.0f32);
-            }
+    for i in 0usize..comptime!(bn * 8 / threads) {
+        let target = b_shared + i * threads;
+        let source = b_global + i * ((threads / (bn / 4)) * (ldb / 4));
+        if b_valid {
+            copy_async(&b.slice(source, source + 1), &mut sb.slice_mut(target, target + 1), 4u32);
+        } else {
+            sb[target] = Vector::new(0.0f32);
         }
     }
 }
@@ -135,6 +162,12 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     let b_stage = comptime!(bn * 8);
     let b_row = comptime!(bn / 4);
     let blocks = comptime!(k / 32);
+    let a_copy_row = row + thread / 8;
+    let b_copy_col = col + (thread % b_row) * 4;
+    let a_source = RUDA_POS_Y as usize * (a_batch / 4) + a_copy_row * (lda / 4) + thread % 8;
+    let b_source = RUDA_POS_Y as usize * (b_batch / 4) + (thread / b_row) * (ldb / 4) + b_copy_col / 4;
+    let a_target = (thread / 8) * 8 + ((thread % 8) ^ ((thread / 8 % 4) * 2));
+    let b_target = (thread / b_row) * b_row + ((thread % b_row) ^ ((thread / b_row / 2 % 4) * 2));
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(a_stage * stages, 32usize);
     let mut sb = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(b_stage * stages, 32usize);
     let pairs = sa.to_slice().with_vector_size::<Const<2>>();
@@ -144,43 +177,49 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     #[unroll]
     for stage in 0usize..(stages - 1) {
         if comptime!(stage < k / 32) {
-            load_stage(a, b, &mut sa, &mut sb, row, col, stage, stage, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads);
+            load_stage(a, b, &mut sa, &mut sb, a_source, b_source, a_target, b_target,
+                a_copy_row, b_copy_col, stage, stage, m, n, lda, ldb, bm, bn, threads);
         }
         commit_copy_group();
     }
     // Per-thread swizzle terms: A rows have row % 4 == g % 4, B rows of one
     // k8 step have (row / 2) % 4 == t.
     let xa = (g % 4) * 2;
-    let a_base = (wm + g) * 32 + (t % 2) * 2;
+    let a_base = (wm + g) * 16 + t % 2;
     let b_col = wn / 4 + (g ^ (t * 2));
+    let b_base = t * 2 * b_row + b_col;
+    let mut bank = 0usize;
+    let mut write_bank = comptime!(stages - 1);
     for block in 0usize..blocks {
-        let bank = block % stages;
         wait_copy_group(comptime!((stages - 2) as u32));
         sync_ruda();
         let next = block + stages - 1;
         if next < blocks {
-            load_stage(a, b, &mut sa, &mut sb, row, col, next, next % stages, m, n, lda, ldb, a_batch, b_batch, bm, bn, threads);
+            load_stage(a, b, &mut sa, &mut sb, a_source, b_source, a_target, b_target,
+                a_copy_row, b_copy_col, next, write_bank, m, n, lda, ldb, bm, bn, threads);
         }
         commit_copy_group();
+        let a_read = bank * (a_stage * 2) + a_base;
+        let b_read = bank * b_stage + b_base;
         #[unroll]
         for s in 0usize..4 {
-            let mut ar = Array::<Vector<tf32, Const<4>>>::new(mt);
+            let mut ar = Sequence::<Vector<tf32, Const<4>>>::new();
             let chunk = ((s * 2) ^ xa) + t / 2;
             #[unroll]
             for i in 0usize..mt {
-                let index = bank * (a_stage * 4) + a_base + i * 512 + chunk * 4;
-                let low = pairs[index / 2];
-                let high = pairs[(index + 256) / 2];
+                let index = a_read + i * 256 + chunk * 2;
+                let low = pairs[index];
+                let high = pairs[index + 128];
                 let mut fragment = Vector::<tf32, Const<4>>::empty();
                 fragment[0usize] = tf32::cast_from(low[0usize]);
                 fragment[1usize] = tf32::cast_from(high[0usize]);
                 fragment[2usize] = tf32::cast_from(low[1usize]);
                 fragment[3usize] = tf32::cast_from(high[1usize]);
-                ar[i] = fragment;
+                ar.push(fragment);
             }
             #[unroll]
             for q in 0usize..quads {
-                let index = bank * b_stage + (s * 8 + t * 2) * b_row + b_col + q * 8;
+                let index = b_read + s * (8 * b_row) + q * 8;
                 let first = sb[index];
                 let second = sb[index + b_row];
                 #[unroll]
@@ -195,6 +234,10 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
                 }
             }
         }
+        bank += 1;
+        if bank == stages { bank = 0; }
+        write_bank += 1;
+        if write_bank == stages { write_bank = 0; }
     }
     wait_copy_group(0u32);
     let base = RUDA_POS_Y as usize * m * n;
@@ -214,7 +257,10 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
                     low[jj] = value[h * 2];
                     high[jj] = value[h * 2 + 1];
                 }
-                if r < m && c < n {
+                let mut valid = true;
+                if comptime!(m % bm != 0) { valid = valid && r < m; }
+                if comptime!(n % bn != 0) { valid = valid && c < n; }
+                if valid {
                     out[(base + r * n + c) / 4] = low;
                     out[(base + r * n + c + 4) / 4] = high;
                 }
