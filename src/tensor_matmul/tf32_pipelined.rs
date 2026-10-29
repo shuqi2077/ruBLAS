@@ -29,6 +29,32 @@ mod tests {
     use super::CONFIGS;
 
     #[test]
+    fn natural_b_fragments_have_unique_banks_and_match_the_copy_swizzle() {
+        for bn in [64usize, 128] {
+            for wn in (0..bn).step_by(32) {
+                for tile in 0..4 {
+                    for s in 0..4 {
+                        let mut banks = [false; 32];
+                        for lane in 0..32 {
+                            let (g, t) = (lane / 4, lane % 4);
+                            let column = wn + tile * 8 + g;
+                            let row = s * 8 + t;
+                            let index = row * bn + (column ^ (t * 8));
+                            assert!(!banks[index % 32]);
+                            banks[index % 32] = true;
+                            for half in 0..2 {
+                                let row = row + half * 4;
+                                let copied = (row * (bn / 4) + ((column / 4) ^ ((row % 4) * 2))) * 4 + column % 4;
+                                assert_eq!(index + half * 4 * bn, copied);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn affine_copy_offsets_preserve_every_swizzled_element() {
         for (mut config, matrix_load) in CONFIGS.into_iter().flat_map(|config| [(config, false), (config, true)]) {
             if matrix_load && config.bm >= 128 { config.warp_m = 64; }
@@ -184,6 +210,8 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     let mut sa = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(a_stage * stages, 32usize);
     let mut sb = SharedMemory::<Vector<f32, Const<4>>>::new_aligned(b_stage * stages, 32usize);
     let pairs = sa.to_slice().with_vector_size::<Const<2>>();
+    let b_words = sb.to_slice().with_vector_size::<Const<1>>();
+    let natural_n = comptime!(matrix_load && warp_m == 64);
     let mut acc = Sequence::<Vector<f32, Const<4>>>::new();
     #[unroll] for _ in 0usize..(mt * ntile) { acc.push(Vector::new(0.0f32)); }
     let def = cmma::MmaDefinition::<tf32, tf32, f32>::new(16usize, 8usize, 8usize);
@@ -238,6 +266,19 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
                 }
                 ar.push(fragment);
             }
+            if comptime!(natural_n) {
+                #[unroll]
+                for j in 0usize..ntile {
+                    let index = bank * (b_stage * 4) + (s * 8 + t) * bn + ((wn + j * 8 + g) ^ (t * 8));
+                    let mut br = Vector::<tf32, Const<2>>::empty();
+                    br[0usize] = tf32::cast_from(b_words[index][0usize]);
+                    br[1usize] = tf32::cast_from(b_words[index + 4 * bn][0usize]);
+                    #[unroll]
+                    for i in 0usize..mt {
+                        def.execute_vectors_inplace(&ar[i], &br, acc.index_mut(i * ntile + j));
+                    }
+                }
+            } else {
             #[unroll]
             for q in 0usize..quads {
                 let index = b_read + s * (8 * b_row) + q * 8;
@@ -254,6 +295,7 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
                     }
                 }
             }
+            }
         }
         bank += 1;
         if bank == stages { bank = 0; }
@@ -262,11 +304,23 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     }
     wait_copy_group(0u32);
     let base = RUDA_POS_Y as usize * m * n;
+    let mut output_pairs = out.to_slice_mut().with_vector_size::<Const<2>>();
     #[unroll]
     for i in 0usize..mt {
         #[unroll]
         for h in 0usize..2 {
             let r = row + wm + i * 16 + g + h * 8;
+            if comptime!(natural_n) {
+                #[unroll]
+                for j in 0usize..ntile {
+                    let c = col + wn + j * 8 + t * 2;
+                    let value = acc[i * ntile + j];
+                    let mut pair = Vector::<f32, Const<2>>::empty();
+                    pair[0usize] = value[h * 2];
+                    pair[1usize] = value[h * 2 + 1];
+                    output_pairs[(base + r * n + c) / 2] = pair;
+                }
+            } else {
             #[unroll]
             for q in 0usize..quads {
                 let c = col + wn + q * 32 + t * 8;
@@ -285,6 +339,7 @@ fn pipelined(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
                     out[(base + r * n + c) / 4] = low;
                     out[(base + r * n + c + 4) / 4] = high;
                 }
+            }
             }
         }
     }
