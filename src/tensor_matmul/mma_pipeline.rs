@@ -49,7 +49,7 @@ fn load_warp_tiles<I: Float>(a: &Slice<I>, b: &Slice<I>,
 }
 
 #[ruda(launch)]
-fn mma_pipeline<I: Float, O: Float>(
+pub fn mma_pipeline<I: Float, O: Float>(
     lhs: &Array<I>, rhs: &Array<I>, out: &mut Array<O>, bias: &Array<O>,
     m: u32, n: u32, full_k: u32, partition_k: u32, alpha: f32, beta: f32, bias_row_stride: usize, bias_column_stride: usize,
     #[define(I)] _input: StorageType, #[define(O)] _output: StorageType,
@@ -59,6 +59,8 @@ fn mma_pipeline<I: Float, O: Float>(
     #[comptime] grouped_tiles: bool,
     #[comptime] interleaved: bool,
     #[comptime] epilogue: bool, #[comptime] use_bias: bool, #[comptime] partitions: usize,
+    #[comptime] batch_shape: Vec<usize>, #[comptime] a_strides: Vec<usize>, #[comptime] b_strides: Vec<usize>,
+    #[comptime] lda: usize, #[comptime] ldb: usize,
 ) {
     let lane = UNIT_POS_X as usize;
     let warp = UNIT_POS_Y as usize;
@@ -86,14 +88,24 @@ fn mma_pipeline<I: Float, O: Float>(
     }
     let row = tile_m * extent_m;
     let column = tile_n * extent_n;
-    let left = lhs.slice(batch * m as usize * full_k as usize + reduction_start, (batch + 1) * m as usize * full_k as usize);
-    let right = rhs.slice(batch * n as usize * full_k as usize + reduction_start, (batch + 1) * n as usize * full_k as usize);
+    let mut batch_index=batch;let mut left_offset=0usize;let mut right_offset=0usize;
+    #[unroll] for step in 0usize..comptime!(batch_shape.len()) {
+        let axis=comptime!(batch_shape.len()-1-step);let coordinate=batch_index%comptime!(batch_shape[axis]);
+        left_offset+=coordinate*comptime!(a_strides[axis]);right_offset+=coordinate*comptime!(b_strides[axis]);
+        batch_index/=comptime!(batch_shape[axis]);
+    }
+    let mut left_row_stride=lda;let mut right_row_stride=ldb;
+    if comptime!(lda==0) {left_row_stride=full_k as usize;left_offset=batch*m as usize*full_k as usize;}
+    if comptime!(ldb==0) {right_row_stride=full_k as usize;right_offset=batch*n as usize*full_k as usize;}
+    let left = lhs.slice(left_offset + reduction_start, left_offset+(m as usize-1)*left_row_stride+full_k as usize);
+    let right = rhs.slice(right_offset + reduction_start, right_offset+(n as usize-1)*right_row_stride+full_k as usize);
     let copy_row = UNIT_POS as usize / (step_k / 8);
     let copy_column = UNIT_POS as usize % (step_k / 8) * 8;
     let copy_shared = (copy_row * step_k + (copy_column ^ ((copy_row / (64 / step_k) % (step_k / 8)) * 8))) as u32;
-    let left_base = (row + copy_row) * full_k as usize + copy_column;
-    let right_base = (column + copy_row) * full_k as usize + copy_column;
-    let copy_stride = (32 * warp_rows * warp_cols * 8 / step_k) * full_k as usize;
+    let left_base = (row + copy_row) * left_row_stride + copy_column;
+    let right_base = (column + copy_row) * right_row_stride + copy_column;
+    let left_copy_stride = (32 * warp_rows * warp_cols * 8 / step_k) * left_row_stride;
+    let right_copy_stride = (32 * warp_rows * warp_cols * 8 / step_k) * right_row_stride;
     let a_row = (warp / warp_cols * (extent_m / warp_rows) + lane % 16) as u32;
     let a_column = (lane / 16 * 8) as u32;
     let a_base = a_row * step_k as u32 + (a_column ^ ((a_row / (64 / step_k) as u32 % (step_k / 8) as u32) * 8));
@@ -123,8 +135,8 @@ fn mma_pipeline<I: Float, O: Float>(
     #[unroll]
     for stage in 0usize..comptime!(if copy_groups { stages - 1 } else { stages }) {
         if stage * step_k < k as usize {
-            copy_tile(&left,&mut a.slice_mut(stage*extent_m*step_k,(stage+1)*extent_m*step_k),left_base,row+copy_row,copy_stride,copy_shared,m,stage,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
-            copy_tile(&right,&mut b.slice_mut(stage*extent_n*step_k,(stage+1)*extent_n*step_k),right_base,column+copy_row,copy_stride,copy_shared,n,stage,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+            copy_tile(&left,&mut a.slice_mut(stage*extent_m*step_k,(stage+1)*extent_m*step_k),left_base,row+copy_row,left_copy_stride,copy_shared,m,stage,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+            copy_tile(&right,&mut b.slice_mut(stage*extent_n*step_k,(stage+1)*extent_n*step_k),right_base,column+copy_row,right_copy_stride,copy_shared,n,stage,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
             if !comptime!(copy_groups) { ready[stage].commit_copy_async(); }
         }
         if comptime!(copy_groups) { barrier::commit_copy_group(); }
@@ -175,8 +187,8 @@ fn mma_pipeline<I: Float, O: Float>(
                             if (tile + stages - 1) * step_k < k as usize {
                                 #[unroll]
                                 for group in 0usize..comptime!(if inner+2==step_k/16 {2usize} else {1usize}) {
-                                    copy_tile(&left,&mut a.slice_mut(pipeline_write_stage*extent_m*step_k,(pipeline_write_stage+1)*extent_m*step_k),left_base,row+copy_row,copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,inner+group,step_k/16);
-                                    copy_tile(&right,&mut b.slice_mut(pipeline_write_stage*extent_n*step_k,(pipeline_write_stage+1)*extent_n*step_k),right_base,column+copy_row,copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,inner+group,step_k/16);
+                                    copy_tile(&left,&mut a.slice_mut(pipeline_write_stage*extent_m*step_k,(pipeline_write_stage+1)*extent_m*step_k),left_base,row+copy_row,left_copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,inner+group,step_k/16);
+                                    copy_tile(&right,&mut b.slice_mut(pipeline_write_stage*extent_n*step_k,(pipeline_write_stage+1)*extent_n*step_k),right_base,column+copy_row,right_copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,inner+group,step_k/16);
                                 }
                             }
                         }
@@ -204,8 +216,8 @@ fn mma_pipeline<I: Float, O: Float>(
                     if !comptime!(interleaved) {
                         let next=comptime!((stage+stages-1)%stages);
                         if (tile+stages-1)*step_k<k as usize {
-                            copy_tile(&left,&mut a.slice_mut(next*extent_m*step_k,(next+1)*extent_m*step_k),left_base,row+copy_row,copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
-                            copy_tile(&right,&mut b.slice_mut(next*extent_n*step_k,(next+1)*extent_n*step_k),right_base,column+copy_row,copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+                            copy_tile(&left,&mut a.slice_mut(next*extent_m*step_k,(next+1)*extent_m*step_k),left_base,row+copy_row,left_copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+                            copy_tile(&right,&mut b.slice_mut(next*extent_n*step_k,(next+1)*extent_n*step_k),right_base,column+copy_row,right_copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
                         }
                         barrier::commit_copy_group();
                     }
@@ -217,8 +229,8 @@ fn mma_pipeline<I: Float, O: Float>(
                     if comptime!(copy_groups && interleaved) {
                         let next=comptime!((stage+stages-1)%stages);
                         if (tile+stages-1)*step_k<k as usize {
-                            copy_tile(&left,&mut a.slice_mut(next*extent_m*step_k,(next+1)*extent_m*step_k),left_base,row+copy_row,copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,inner,step_k/16);
-                            copy_tile(&right,&mut b.slice_mut(next*extent_n*step_k,(next+1)*extent_n*step_k),right_base,column+copy_row,copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,inner,step_k/16);
+                            copy_tile(&left,&mut a.slice_mut(next*extent_m*step_k,(next+1)*extent_m*step_k),left_base,row+copy_row,left_copy_stride,copy_shared,m,tile+stages-1,extent_m,32*warp_rows*warp_cols,step_k,tails,inner,step_k/16);
+                            copy_tile(&right,&mut b.slice_mut(next*extent_n*step_k,(next+1)*extent_n*step_k),right_base,column+copy_row,right_copy_stride,copy_shared,n,tile+stages-1,extent_n,32*warp_rows*warp_cols,step_k,tails,inner,step_k/16);
                         }
                     }
                     let mut fragments = Sequence::<Array<Vector<I, Const<2>>>>::new();
@@ -260,8 +272,8 @@ fn mma_pipeline<I: Float, O: Float>(
                 else {
                     sync_ruda();
                     if (tile + stages) * step_k < k as usize {
-                        copy_tile(&left,&mut a.slice_mut(current_m,current_m+extent_m*step_k),left_base,row+copy_row,copy_stride,copy_shared,m,tile+stages,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
-                        copy_tile(&right,&mut b.slice_mut(current_n,current_n+extent_n*step_k),right_base,column+copy_row,copy_stride,copy_shared,n,tile+stages,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+                        copy_tile(&left,&mut a.slice_mut(current_m,current_m+extent_m*step_k),left_base,row+copy_row,left_copy_stride,copy_shared,m,tile+stages,extent_m,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
+                        copy_tile(&right,&mut b.slice_mut(current_n,current_n+extent_n*step_k),right_base,column+copy_row,right_copy_stride,copy_shared,n,tile+stages,extent_n,32*warp_rows*warp_cols,step_k,tails,0usize,1usize);
                         ready[stage].commit_copy_async();
                     }
                 }
@@ -351,7 +363,7 @@ pub(super) fn prepare_split_partials<R: Runtime>(lhs:RudaTensor<R>,rhs:RudaTenso
     prepare_configured_epilogue(lhs,rhs,out,extent_m,extent_n,warp_rows,warp_cols,stages,4,64,true,true,None,partitions,partition_k)
 }
 
-fn prepare_configured_epilogue<R: Runtime>(lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>,
+pub(super) fn prepare_configured_epilogue<R: Runtime>(lhs: RudaTensor<R>, rhs: RudaTensor<R>, out: RudaTensor<R>,
     extent_m: usize, extent_n: usize, warp_rows: usize, warp_cols: usize, stages: usize, preload: usize, step_k: usize, copy_groups: bool, grouped_tiles: bool,
     epilogue:Option<(RudaTensor<R>,f32,f32)>,partitions:usize,partition_k:usize) -> PreparedKernel<R> {
     let rank = lhs.meta.num_dims();
@@ -363,7 +375,8 @@ fn prepare_configured_epilogue<R: Runtime>(lhs: RudaTensor<R>, rhs: RudaTensor<R
     let input = lhs.dtype.into();
     let output = out.dtype.into();
     let hardware = &client.properties().hardware;
-    assert!(matches!(extent_m,64|128|256) && matches!(extent_n,64|128|256) && matches!(warp_rows,2|4) && matches!(warp_cols,2|4) && warp_rows*warp_cols<=8 && matches!(stages,2..=4));
+    assert!(matches!(extent_m,16|32|64|128|256) && matches!(extent_n,64|128|256) && matches!(warp_rows,1|2|4) && matches!(warp_cols,2|4) && warp_rows*warp_cols<=8 && matches!(stages,2..=4));
+    assert!(extent_m % (16 * warp_rows) == 0 && extent_n % (16 * warp_cols) == 0);
     assert!(matches!(preload,1|2|4|8|16) && extent_n / (8 * warp_cols) % preload == 0);
     assert!(matches!(step_k,32|64) && k % step_k == 0);
     assert!(hardware.max_shared_memory_size as usize >= (extent_m+extent_n) * step_k * 2 * stages + stages * 8);
@@ -371,7 +384,15 @@ fn prepare_configured_epilogue<R: Runtime>(lhs: RudaTensor<R>, rhs: RudaTensor<R
     let has_epilogue=epilogue.is_some();
     let (bias,alpha,beta)=epilogue.unwrap_or_else(||(out.clone(),1.0,0.0));
     let (bias_row_stride,bias_column_stride)=(bias.meta.strides()[0],bias.meta.strides()[1]);
+    let batch_shape=lhs.meta.shape()[..rank-2].to_vec();
+    let a_strides=lhs.meta.strides()[..rank-2].to_vec();let b_strides=rhs.meta.strides()[..rhs.meta.num_dims()-2].to_vec();
+    let lda=lhs.meta.strides()[rank-2];let ldb=rhs.meta.strides()[rhs.meta.num_dims()-1];
+    let binding=|tensor:&RudaTensor<R>| {
+        let span=1+tensor.meta.shape().iter().zip(tensor.meta.strides().iter()).map(|(&size,&stride)|(size-1)*stride).sum::<usize>();
+        unsafe {ArrayArg::from_raw_parts(tensor.handle.clone(),span)}
+    };
     mma_pipeline::prepare::<R>(&client, RudaCount::Static(m.div_ceil(extent_m) as u32, n.div_ceil(extent_n) as u32, batches as u32),
-        RudaDim::new_2d(32, (warp_cols * warp_rows) as u32), lhs.into_array_arg(), rhs.into_array_arg(), out.into_array_arg(),bias.into_array_arg(),
-        m as u32, n as u32, k as u32,partition_k as u32,alpha,beta,bias_row_stride,bias_column_stride, input, output, warp_rows, warp_cols, extent_m, extent_n, m % extent_m != 0 || n % extent_n != 0, stages, preload, step_k, copy_groups, grouped_tiles, step_k == 32 && warp_rows * warp_cols == 8,has_epilogue,has_epilogue && beta!=0.0,partitions)
+        RudaDim::new_2d(32, (warp_cols * warp_rows) as u32), binding(&lhs), binding(&rhs), binding(&out),binding(&bias),
+        m as u32, n as u32, k as u32,partition_k as u32,alpha,beta,bias_row_stride,bias_column_stride, input, output, warp_rows, warp_cols, extent_m, extent_n, m % extent_m != 0 || n % extent_n != 0, stages, preload, step_k, copy_groups, grouped_tiles, step_k == 32 && warp_rows * warp_cols == 8,has_epilogue,has_epilogue && beta!=0.0,partitions,
+        batch_shape,a_strides,b_strides,lda,ldb)
 }

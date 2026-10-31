@@ -74,38 +74,65 @@ fn prepare_matmul_pipelined_inner<R: Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R
         || !matches!(out.dtype,DType::F16|DType::BF16|DType::F32)
         || [&lhs,&rhs,&out].iter().any(|t|t.qparams.is_some() || t.meta.num_dims()<2
             || !t.client.same_execution_queue(&out.client))
-        || !canonical(&lhs,false) || !canonical(&out,false)
-        || !(canonical(&rhs,false) || canonical(&rhs,true)) {
+        || !canonical(&out,false) {
         return Err(MatmulSetupError::InvalidConfig(Box::new("prepared pipelined matmul requires matching F16/BF16 inputs and one execution queue")));
     }
+    let packed_inputs=canonical(&lhs,false) && (canonical(&rhs,false) || canonical(&rhs,true));
     let globals=MatmulGlobalElems{f32_math,lhs:lhs.dtype.into(),rhs:rhs.dtype.into(),out:out.dtype.into()};
     let problem=MatmulProblem::from_shapes_and_strides(lhs.meta.shape().clone(),rhs.meta.shape().clone(),out.meta.shape().clone(),
         lhs.meta.strides().clone(),rhs.meta.strides().clone(),out.meta.strides().clone(),globals.clone(),AddressType::U32,None,None)?;
     let types=MatmulElems::from_globals(&globals);
     let client=out.client.clone();
+    if let Some(kernels)=super::blackwell::prepare_batched(&lhs,&rhs,&out,epilogue.clone(),allow_split) {
+        return Ok(kernels);
+    }
     let mma=ruda_core::ir::features::MmaConfig {
         a_type:globals.lhs,b_type:globals.rhs,
         cd_type:ruda_core::ir::ElemType::Float(ruda_core::ir::FloatKind::F32).into(),m:16,n:8,k:16,
     };
-    if client.features().matmul.mma.contains(&mma) && client.features().alignment
+    let mma_inputs=lhs.meta.strides()[lhs.meta.num_dims()-1]==1 && rhs.meta.strides()[rhs.meta.num_dims()-2]==1
+        && lhs.meta.strides()[lhs.meta.num_dims()-2]>=problem.k && rhs.meta.strides()[rhs.meta.num_dims()-1]>=problem.k
+        && [&lhs,&rhs].iter().enumerate().all(|(side,t)| {
+            let rank=t.meta.num_dims();let unit_axis=rank-1-side;
+            t.meta.shape().iter().zip(t.meta.strides().iter()).enumerate()
+                .all(|(d,(&size,&stride))|d==unit_axis || size<=1 || stride%8==0)
+                && t.meta.shape().iter().zip(t.meta.strides().iter()).try_fold(1usize,|span,(&size,&stride)|
+                    size.checked_sub(1).and_then(|v|v.checked_mul(stride)).and_then(|v|span.checked_add(v)))
+                    .is_some_and(|span|span<=u32::MAX as usize)
+        });
+    if mma_inputs && client.features().matmul.mma.contains(&mma) && client.features().alignment
         && client.features().copy_async && client.features().matmul.ldmatrix.contains(&globals.lhs)
         && crate::kernel_ir::components::global::read::validate_async_barrier(client.properties()).is_ok()
         && client.properties().hardware.plane_size_min==32 && client.properties().hardware.plane_size_max==32
         && client.properties().hardware.max_units_per_ruda>=128
         && client.properties().hardware.max_ruda_dim.0>=32 && client.properties().hardware.max_ruda_dim.1>=4
         && client.properties().hardware.max_shared_memory_size>=32776
-        && problem.m>=64 && problem.n>=64 && problem.k>=32
+        && problem.m>=2 && problem.n>=64 && problem.k>=32
         && problem.k%32==0
         && problem.rhs_layout==ruda_kernel::tiling::MatrixLayout::ColMajor
         && lhs.meta.shape()[..lhs.meta.num_dims()-2]==out.meta.shape()[..out.meta.num_dims()-2]
         && rhs.meta.shape()[..rhs.meta.num_dims()-2]==out.meta.shape()[..out.meta.num_dims()-2]
         && [&lhs,&rhs].iter().all(|t|t.handle.offset_start.unwrap_or(0)%16==0)
         && [&lhs,&rhs,&out].iter().all(|t|t.meta.num_elements()<=u32::MAX as usize)
-        && problem.m.div_ceil(64)<=client.properties().hardware.max_ruda_count.0 as usize
+        && problem.m.div_ceil(16)<=client.properties().hardware.max_ruda_count.0 as usize
         && problem.n.div_ceil(64)<=client.properties().hardware.max_ruda_count.1 as usize
         && out.meta.num_elements()/(problem.m*problem.n)<=client.properties().hardware.max_ruda_count.2 as usize {
-        if allow_split {
-            if let Some(kernels)=super::mma_split_k::prepare(lhs.clone(),rhs.clone(),out.clone(),epilogue.clone()) {return Ok(kernels);}
+        if problem.k % 64 == 0 {
+            let h=&client.properties().hardware;
+            let batches=out.meta.num_elements()/(problem.m*problem.n);
+            let mut plan=super::gemm_policy::plan(problem.m,problem.n,problem.k,batches,
+                h.num_streaming_multiprocessors.unwrap_or(0) as usize,false,allow_split && packed_inputs);
+            if plan.shared_bytes()<=h.max_shared_memory_size as usize
+                && plan.warp_rows*plan.warp_cols*32<=h.max_units_per_ruda as usize
+                && plan.warp_rows*plan.warp_cols<=h.max_ruda_dim.1 as usize {
+                if out.meta.num_elements().checked_mul(plan.partitions).is_none_or(|v|v>u32::MAX as usize)
+                    || batches*plan.partitions>h.max_ruda_count.2 as usize
+                    || out.meta.num_elements().div_ceil(256)>h.max_ruda_count.0 as usize {plan.partitions=1;}
+                if plan.partitions>1 {return Ok(super::mma_split_k::prepare_plan(lhs,rhs,out,epilogue,plan));}
+                return Ok(vec![super::mma_pipeline::prepare_configured_epilogue(lhs,rhs,out,
+                    plan.bm,plan.bn,plan.warp_rows,plan.warp_cols,plan.stages,4,64,true,
+                    problem.m>=512 && problem.n>=512,epilogue,1,0)]);
+            }
         }
         return Ok(vec![if let Some((bias,alpha,beta))=epilogue {
             super::mma_pipeline::prepare_addmm(lhs,rhs,out,bias,alpha,beta)
@@ -116,6 +143,18 @@ fn prepare_matmul_pipelined_inner<R: Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R
     }
     let left=InputBinding::new(lhs.binding(),globals.lhs);let right=InputBinding::new(rhs.binding(),globals.rhs);
     let output=out.binding();
+    if !packed_inputs {
+        if problem.m>=64 && problem.n>=64 && problem.k>=64 {
+            match crate::kernel_ir::launch::launch_tiling::prepare_ref::<R,AsyncCyclicDoubleBufferingAlgorithm>(
+                &client,left.clone(),right.clone(),output.clone(),&BlueprintStrategy::default(),&types) {
+                Ok(kernel)=>return Ok(vec![kernel]),
+                Err(MatmulSetupError::Unavailable(_) | MatmulSetupError::InvalidConfig(_) | MatmulSetupError::Vectorization(_))=>{},
+                Err(error)=>return Err(error),
+            }
+        }
+        return crate::kernel_ir::launch::launch_tiling::prepare_ref::<R,SimpleAlgorithm>(
+            &client,left,right,output,&BlueprintStrategy::default(),&types).map(|kernel|vec![kernel]);
+    }
     if client.features().matmul.mma.contains(&mma) && client.features().alignment
         && problem.m>=64 && problem.n>=64 && problem.k>=64
         && problem.m%64==0 && problem.n%64==0 && problem.k%64==0
@@ -205,7 +244,13 @@ pub fn matmul_with_precision<R: Runtime>(
     {
         let output = out.unwrap_or_else(|| init_matmul_output(&lhs, &rhs, out_dtype));
         let rank = lhs.meta.num_dims();
-        let result = if rank >= 2 && lhs.meta.shape()[rank - 2] == 1
+        let rhs_rank=rhs.meta.num_dims();
+        let native_gemm = rank >= 2 && rhs_rank >= 2
+            && lhs.meta.shape()[rank-2] > 1 && lhs.meta.strides()[rank-1] == 1 && rhs.meta.strides()[rhs_rank-2] == 1
+            && lhs.meta.shape()[rank-1] % 64 == 0
+            && (lhs.client.features().matmul.tcgen05 || rank==2 && rhs_rank==2 && lhs.meta.shape()[0] <= 32);
+        let result = if rank >= 2 && (1..=4).contains(&lhs.meta.shape()[rank - 2])
+            && !native_gemm
             && [&lhs, &rhs, &output].iter().all(|tensor| {
                 let rank = tensor.meta.num_dims();
                 rank >= 2 && tensor.meta.shape()[..rank - 2].iter().all(|&size| size == 1)
@@ -219,7 +264,7 @@ pub fn matmul_with_precision<R: Runtime>(
                 tensor
             };
             super::launch_gemv_low_precision(matrix(lhs.clone()), matrix(rhs.clone()), matrix(output.clone()))
-        } else if !matches!(strategy, MatmulStrategy::Ruda) && rank >= 2 && lhs.meta.shape()[rank - 2] > 1
+        } else if (native_gemm || !matches!(strategy, MatmulStrategy::Ruda)) && rank >= 2 && lhs.meta.shape()[rank - 2] > 1
             && lhs.client.features().matmul.mma.iter().chain(lhs.client.features().matmul.cmma.iter())
                 .any(|config| config.a_type == lhs.dtype.into() && config.b_type == rhs.dtype.into()
                     && config.cd_type == DType::F32.into())

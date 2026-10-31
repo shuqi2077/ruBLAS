@@ -48,6 +48,13 @@ fn reduce_scalar<O:Float>(partials:&Array<f32>,out:&mut Array<O>,bias:&Array<O>,
 pub(super) fn prepare_configured<R:Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R>,out:RudaTensor<R>,
     epilogue:Option<(RudaTensor<R>,f32,f32)>,extent_m:usize,extent_n:usize,warp_rows:usize,warp_cols:usize,
     stages:usize,requested_partitions:usize)->Vec<PreparedKernel<R>> {
+    let plan=super::gemm_policy::GemmPlan {blackwell:false,bm:extent_m,bn:extent_n,warp_rows,warp_cols,stages,partitions:requested_partitions};
+    prepare_plan(lhs,rhs,out,epilogue,plan)
+}
+
+pub(super) fn prepare_plan<R:Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R>,out:RudaTensor<R>,
+    epilogue:Option<(RudaTensor<R>,f32,f32)>,mut plan:super::gemm_policy::GemmPlan)->Vec<PreparedKernel<R>> {
+    let requested_partitions=plan.partitions;
     let rank=lhs.meta.num_dims();let m=lhs.meta.shape()[rank-2];let k=lhs.meta.shape()[rank-1];
     let n=*out.meta.shape().last().unwrap();let batches=out.meta.num_elements()/(m*n);
     assert!(requested_partitions>1 && k%64==0 && requested_partitions<=k/64);
@@ -58,7 +65,12 @@ pub(super) fn prepare_configured<R:Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R>,
     let bytes=elements.checked_mul(4).expect("split-K workspace byte overflow");
     let client=out.client.clone();
     let partials=RudaTensor::new_contiguous(client.clone(),out.device.clone(),[batches*partitions,m,n].into(),client.empty(bytes),DType::F32);
-    let product=super::mma_pipeline::prepare_split_partials(lhs,rhs,partials.clone(),extent_m,extent_n,warp_rows,warp_cols,stages,partitions,partition_k);
+    plan.partitions=partitions;
+    let product=if plan.blackwell {
+        super::blackwell::prepare(lhs,rhs,partials.clone(),None,plan)
+    } else {
+        super::mma_pipeline::prepare_split_partials(lhs,rhs,partials.clone(),plan.bm,plan.bn,plan.warp_rows,plan.warp_cols,plan.stages,partitions,partition_k)
+    };
     let has_epilogue=epilogue.is_some();let (bias,alpha,beta)=epilogue.unwrap_or_else(||(out.clone(),1.0,0.0));
     let (bias_row,bias_column)=(bias.meta.strides()[0],bias.meta.strides()[1]);
     let vector=m*n%4==0;let width=if vector {4}else {1};
@@ -77,14 +89,15 @@ pub(super) fn prepare<R:Runtime>(lhs:RudaTensor<R>,rhs:RudaTensor<R>,out:RudaTen
     epilogue:Option<(RudaTensor<R>,f32,f32)>)->Option<Vec<PreparedKernel<R>>> {
     let rank=lhs.meta.num_dims();let m=lhs.meta.shape()[rank-2];let k=lhs.meta.shape()[rank-1];let n=*out.meta.shape().last()?;
     let h=&out.client.properties().hardware;let sms=h.num_streaming_multiprocessors? as usize;
-    if k<8192 || k%64!=0 || m<128 || n<128 || h.max_shared_memory_size<98328
-        || h.max_units_per_ruda<256 || h.max_ruda_dim.1<8 || sms==0 {return None;}
-    let batches=out.meta.num_elements()/(m*n);let tiles=m.div_ceil(128)*n.div_ceil(128)*batches;
-    if tiles>sms*4 {return None;}
-    let requested=(sms*5).div_ceil(tiles).clamp(2,8).min(k/1024);
-    let partition_k=(k/64).div_ceil(requested)*64;let partitions=k.div_ceil(partition_k);
+    if k<64 || k%64!=0 || m<2 || n<64 || sms==0 {return None;}
+    let batches=out.meta.num_elements()/(m*n);
+    let plan=super::gemm_policy::plan(m,n,k,batches,sms,false,true);
+    if plan.shared_bytes()>h.max_shared_memory_size as usize
+        || plan.warp_rows*plan.warp_cols*32>h.max_units_per_ruda as usize
+        || plan.warp_rows*plan.warp_cols>h.max_ruda_dim.1 as usize {return None;}
+    let partitions=plan.partitions;
     let elements=out.meta.num_elements().checked_mul(partitions)?;
     if partitions<2 || elements>u32::MAX as usize || batches*partitions>h.max_ruda_count.2 as usize
         || out.meta.num_elements().div_ceil(256)>h.max_ruda_count.0 as usize {return None;}
-    Some(prepare_configured(lhs,rhs,out,epilogue,128,128,2,4,3,requested))
+    Some(prepare_plan(lhs,rhs,out,epilogue,plan))
 }

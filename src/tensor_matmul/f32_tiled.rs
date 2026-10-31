@@ -37,39 +37,68 @@ pub fn try_addmm_f32_tiled<R: Runtime>(bias: &RudaTensor<R>, a: &RudaTensor<R>, 
     launch(a, b, out, math, Some((bias, alpha, beta)))
 }
 
-fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
-    math: F32MathMode, epilogue: Option<(&RudaTensor<R>, f32, f32)>) -> Result<bool, MatmulSetupError> {
+struct Geometry {
+    m: usize, n: usize, k: usize, lda: usize, ldb: usize,
+    sa: usize, sb: usize, ta: bool, nt: bool, batch: usize,
+    batch_shape: Vec<usize>, a_strides: Vec<usize>, b_strides: Vec<usize>,
+}
+
+fn geometry<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>) -> Option<Geometry> {
     if R::name(&a.client) != "cuda" || a.dtype != DType::F32 || b.dtype != a.dtype || out.dtype != a.dtype
         || a.qparams.is_some() || b.qparams.is_some() || out.qparams.is_some()
-        || !matches!(a.meta.num_dims(), 2 | 3) || b.meta.num_dims() != a.meta.num_dims()
+        || !(2..=8).contains(&a.meta.num_dims()) || b.meta.num_dims() != a.meta.num_dims()
         || out.meta.num_dims() != a.meta.num_dims()
         || !a.client.same_execution_queue(&b.client) || !a.client.same_execution_queue(&out.client)
-    { return Ok(false); }
+    { return None; }
     let d = a.meta.num_dims() - 2;
     let (m, k, n) = (a.meta.shape()[d], a.meta.shape()[d+1], b.meta.shape()[d+1]);
-    if m == 0 || n == 0 || k == 0 || b.meta.shape()[d] != k { return Ok(false); }
+    if m == 0 || n == 0 || k == 0 || b.meta.shape()[d] != k { return None; }
     let ta = a.meta.strides()[d] == 1;
     let nt = b.meta.strides()[d] == 1;
     let lda = a.meta.strides()[d + usize::from(ta)];
     let ldb = b.meta.strides()[d + usize::from(nt)];
-    let batch = if d == 0 { 1 } else { a.meta.shape()[0] };
+    let batch_shape=a.meta.shape()[..d].to_vec();
+    let a_strides=a.meta.strides()[..d].to_vec();let b_strides=b.meta.strides()[..d].to_vec();
+    let batch=batch_shape.iter().try_fold(1usize,|count,&size|count.checked_mul(size))?;
     let sa = if d == 0 { 0 } else { a.meta.strides()[0] };
     let sb = if d == 0 { 0 } else { b.meta.strides()[0] };
     if m % 32 != 0 || n % 32 != 0 || k % 8 != 0 || batch == 0
         || (!ta && a.meta.strides()[d+1] != 1) || (!nt && b.meta.strides()[d+1] != 1)
         || lda < (if ta { m } else { k }) || ldb < (if nt { k } else { n })
-        || lda % 4 != 0 || ldb % 4 != 0 || sa % 4 != 0 || sb % 4 != 0
+        || lda % 4 != 0 || ldb % 4 != 0 || a_strides.iter().chain(&b_strides).any(|s|s%4!=0)
         || out.meta.shape()[d..] != [m, n] || out.meta.strides()[d..] != [n, 1]
-        || (d == 1 && (b.meta.shape()[0] != batch || out.meta.shape()[0] != batch
-            || m.checked_mul(n) != Some(out.meta.strides()[0])))
+        || b.meta.shape()[..d]!=batch_shape || out.meta.shape()[..d]!=batch_shape
+        || (0..d).any(|axis|out.meta.strides()[axis]!=out.meta.shape()[axis+1..].iter().product::<usize>())
         || [a, b].iter().any(|x| x.handle.offset_start.unwrap_or(0) % 16 != 0)
         || [a, b, out].iter().any(|x| x.meta.shape().iter().zip(x.meta.strides().iter()).try_fold(1usize,
             |span, (&size, &stride)| size.checked_sub(1).and_then(|v|v.checked_mul(stride)).and_then(|v|span.checked_add(v)))
             .is_none_or(|span| span > u32::MAX as usize))
-    { return Ok(false); }
+    { return None; }
+    Some(Geometry { m, n, k, lda, ldb, sa, sb, ta, nt, batch, batch_shape, a_strides, b_strides })
+}
+
+/// Prepare the same strict-FP32 tiled GEMM used by eager execution, without launching it.
+pub fn prepare_matmul_f32_tiled<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>,
+    out: &RudaTensor<R>) -> Option<PreparedKernel<R>> {
+    prepare_geometry(a, b, out, geometry(a,b,out)?, None)
+}
+
+fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
+    math: F32MathMode, epilogue: Option<(&RudaTensor<R>, f32, f32)>) -> Result<bool, MatmulSetupError> {
+    let Some(g) = geometry(a,b,out) else { return Ok(false); };
     if math == F32MathMode::AllowTf32 {
-        return Ok(super::tf32_tiled::launch(a, b, out, m, n, k, lda, ldb, sa, sb, ta, nt, batch));
+        if g.batch_shape.len()>1 {return Ok(false);}
+        return Ok(super::tf32_tiled::launch(a,b,out,g.m,g.n,g.k,g.lda,g.ldb,g.sa,g.sb,g.ta,g.nt,g.batch));
     }
+    let Some(kernel) = prepare_geometry(a,b,out,g,epilogue) else { return Ok(false); };
+    let (task,count,args,origin) = kernel.into_parts();
+    origin.launch(task,count,args);
+    Ok(true)
+}
+
+fn prepare_geometry<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
+    geometry: Geometry, epilogue: Option<(&RudaTensor<R>, f32, f32)>) -> Option<PreparedKernel<R>> {
+    let Geometry { m, n, k, lda, ldb, ta, nt, batch, batch_shape, a_strides, b_strides, .. } = geometry;
     let hw = &a.client.properties().hardware;
     let mut bm = if m % 128 == 0 { 128 } else if m % 64 == 0 || m >= 128 { 64 } else { 32 };
     let mut bn = if n % 128 == 0 { 128 } else if n % 64 == 0 || n >= 128 { 64 } else { 32 };
@@ -84,25 +113,40 @@ fn launch<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>, out: &RudaTensor<R>,
     let b_stage = if nt { bn * (bk / 4 + 1) } else { bk * (bn / 4 + 1) };
     if hw.max_units_per_ruda < 256 || hw.max_shared_memory_size < (a_stage + b_stage) * 32
         || m.div_ceil(bm) * n.div_ceil(bn) > hw.max_ruda_count.0 as usize || batch > hw.max_ruda_count.1 as usize
-    { return Ok(false); }
+    { return None; }
     let output_offset = out.handle.offset_start.unwrap_or(0);
     let vector = if bn >= 64 && output_offset % 16 == 0 { 4 } else if output_offset % 8 == 0 { 2 } else { 1 };
     let (bias, alpha, beta) = epilogue.unwrap_or((out, 1.0, 0.0));
     let bias_row = if epilogue.is_some() { bias.meta.strides()[0] } else { 0 };
     let bias_col = if epilogue.is_some() { bias.meta.strides()[1] } else { 0 };
-    unsafe { tiled::launch_unchecked::<R>(&a.client,
+    let binding=|tensor:&RudaTensor<R>| {
+        let span=1+tensor.meta.shape().iter().zip(tensor.meta.strides().iter()).map(|(&size,&stride)|(size-1)*stride).sum::<usize>();
+        unsafe {ArrayArg::from_raw_parts(tensor.handle.clone(),span)}
+    };
+    Some(tiled::prepare::<R>(&a.client,
         RudaCount::Static((m.div_ceil(bm) * n.div_ceil(bn)) as u32, batch as u32, 1), RudaDim::new_1d(256),
-        a.clone().into_array_arg(), b.clone().into_array_arg(), bias.clone().into_array_arg(), out.clone().into_array_arg(),
-        alpha, beta, m, n, k, lda, ldb, sa, sb, ta, nt, bm, bn, bk, a.client.features().copy_async,
-        epilogue.is_some(), beta != 0.0, bias_row, bias_col, vector); }
-    Ok(true)
+        binding(a), binding(b), binding(bias), binding(out),
+        alpha, beta, m, n, k, lda, ldb, batch_shape, a_strides, b_strides, ta, nt, bm, bn, bk, a.client.features().copy_async,
+        epilogue.is_some(), beta != 0.0, bias_row, bias_col, vector))
 }
-
 #[ruda]
 pub(super) fn load(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     sa: &mut SharedMemory<Vector<f32, Const<4>>>, sb: &mut SharedMemory<Vector<f32, Const<4>>>,
     row: usize, col: usize, block: usize, bank: usize,
     #[comptime] lda: usize, #[comptime] ldb: usize, #[comptime] a_batch: usize, #[comptime] b_batch: usize,
+    #[comptime] ta: bool, #[comptime] nt: bool, #[comptime] bm: usize, #[comptime] bn: usize,
+    #[comptime] bk: usize, #[comptime] asynchronous: bool,
+    #[comptime] m: usize, #[comptime] n: usize, #[comptime] threads: usize,
+) {
+    load_at(a,b,sa,sb,row,col,block,bank,RUDA_POS_Y as usize*a_batch,RUDA_POS_Y as usize*b_batch,
+        lda,ldb,ta,nt,bm,bn,bk,asynchronous,m,n,threads);
+}
+
+#[ruda]
+fn load_at(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
+    sa: &mut SharedMemory<Vector<f32, Const<4>>>, sb: &mut SharedMemory<Vector<f32, Const<4>>>,
+    row: usize, col: usize, block: usize, bank: usize, a_base: usize, b_base: usize,
+    #[comptime] lda: usize, #[comptime] ldb: usize,
     #[comptime] ta: bool, #[comptime] nt: bool, #[comptime] bm: usize, #[comptime] bn: usize,
     #[comptime] bk: usize, #[comptime] asynchronous: bool,
     #[comptime] m: usize, #[comptime] n: usize, #[comptime] threads: usize,
@@ -115,7 +159,7 @@ pub(super) fn load(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
     for step in 0usize..comptime!((bm * bk / 4).div_ceil(threads)) {
         let p = UNIT_POS as usize + step * threads;
         if p < bm * bk / 4 {
-            let mut source = RUDA_POS_Y as usize * (a_batch / 4);
+            let mut source = a_base / 4;
             if comptime!(ta) { source += (block * bk + p / ac) * (lda / 4) + row / 4 + p % ac; }
             else { source += (row + p / ac) * (lda / 4) + block * (bk / 4) + p % ac; }
             let target = bank * astage + p / ac * (ac + 1) + p % ac;
@@ -134,7 +178,7 @@ pub(super) fn load(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
     for step in 0usize..comptime!((bn * bk / 4).div_ceil(threads)) {
         let p = UNIT_POS as usize + step * threads;
         if p < bn * bk / 4 {
-            let mut source = RUDA_POS_Y as usize * (b_batch / 4);
+            let mut source = b_base / 4;
             if comptime!(nt) { source += (col + p / bc) * (ldb / 4) + block * (bk / 4) + p % bc; }
             else { source += (block * bk + p / bc) * (ldb / 4) + col / 4 + p % bc; }
             let target = bank * bstage + p / bc * (bc + 1) + p % bc;
@@ -155,14 +199,25 @@ pub(super) fn load(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
 fn tiled<OS: Size>(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const<4>>>,
     bias: &Array<f32>, out: &mut Array<Vector<f32, OS>>, alpha: f32, beta: f32,
     #[comptime] m: usize, #[comptime] n: usize, #[comptime] k: usize,
-    #[comptime] lda: usize, #[comptime] ldb: usize, #[comptime] a_batch: usize, #[comptime] b_batch: usize,
+    #[comptime] lda: usize, #[comptime] ldb: usize,
+    #[comptime] batch_shape: Vec<usize>, #[comptime] a_strides: Vec<usize>, #[comptime] b_strides: Vec<usize>,
     #[comptime] ta: bool, #[comptime] nt: bool, #[comptime] bm: usize, #[comptime] bn: usize,
     #[comptime] bk: usize, #[comptime] asynchronous: bool,
     #[comptime] epilogue: bool, #[comptime] use_bias: bool,
     #[comptime] bias_row: usize, #[comptime] bias_col: usize, #[define(OS)] _vector: usize,
 ) {
-    let row = RUDA_POS_X as usize % comptime!(m.div_ceil(bm)) * bm;
-    let col = RUDA_POS_X as usize / comptime!(m.div_ceil(bm)) * bn;
+    let tile = RUDA_POS_X as usize;
+    let group = tile / comptime!(n.div_ceil(bn)*8) * 8usize;
+    let height = (comptime!(m.div_ceil(bm))-group).min(8usize);
+    let within = tile % comptime!(n.div_ceil(bn)*8);
+    let row = (group + within % height) * bm;
+    let col = (within / height) * bn;
+    let mut batch=RUDA_POS_Y as usize;let mut a_base=0usize;let mut b_base=0usize;
+    #[unroll] for step in 0usize..comptime!(batch_shape.len()) {
+        let axis=comptime!(batch_shape.len()-1-step);let coordinate=batch%comptime!(batch_shape[axis]);
+        a_base+=coordinate*comptime!(a_strides[axis]);b_base+=coordinate*comptime!(b_strides[axis]);
+        batch/=comptime!(batch_shape[axis]);
+    }
     let ty = UNIT_POS as usize / 16;
     let tx = UNIT_POS as usize % 16;
     let tm = comptime!(bm / 16);
@@ -175,14 +230,14 @@ fn tiled<OS: Size>(a: &Array<Vector<f32, Const<4>>>, b: &Array<Vector<f32, Const
     let scalar_b = sb.to_slice().with_vector_size::<Const<1>>();
     let mut acc = Array::<f32>::new(tm * tn);
     #[unroll] for i in 0usize..(tm * tn) { acc[i] = 0.0f32; }
-    load(a, b, &mut sa, &mut sb, row, col, 0usize, 0usize, lda, ldb, a_batch, b_batch, ta, nt, bm, bn, bk, asynchronous, m, n, 256usize);
+    load_at(a, b, &mut sa, &mut sb, row, col, 0usize, 0usize, a_base, b_base, lda, ldb, ta, nt, bm, bn, bk, asynchronous, m, n, 256usize);
     if comptime!(asynchronous) { commit_copy_group(); }
     for block in 0usize..(k / bk) {
         let bank = block % 2;
         if comptime!(asynchronous) { wait_copy_group(0u32); }
         sync_ruda();
         if block + 1 < k / bk {
-            load(a, b, &mut sa, &mut sb, row, col, block+1, 1-bank, lda, ldb, a_batch, b_batch, ta, nt, bm, bn, bk, asynchronous, m, n, 256usize);
+            load_at(a, b, &mut sa, &mut sb, row, col, block+1, 1-bank, a_base, b_base, lda, ldb, ta, nt, bm, bn, bk, asynchronous, m, n, 256usize);
             if comptime!(asynchronous) { commit_copy_group(); }
         }
         #[unroll]
